@@ -258,11 +258,22 @@ DIFF
 빌드 디렉토리는 `CMakeCache.txt`를 찾아 자동 탐지한다(3단계 깊이까지).
 맵 파일도 빌드 디렉토리에서 `*.map`을 찾아 목록으로 띄운다.
 
-상시 사용하려면:
+## 상시 설치
+
+F5로 뜨는 창은 개발용이라 매번 띄워야 한다. 실무에서 쓰려면 심볼릭 링크를
+`~/.vscode/extensions/` 에 걸면 된다. 빌드도 패키징도 필요 없다.
 
 ```
-ln -s "$(pwd)" ~/.vscode/extensions/cmake-link-explorer
+git clone https://github.com/Ruminem/cmake-link-explorer.git ~/cmake-link-explorer
+mkdir -p ~/.vscode/extensions
+ln -s ~/cmake-link-explorer ~/.vscode/extensions/cmake-link-explorer
 ```
+
+VS Code를 완전히 종료했다가 다시 켜면 `code --list-extensions` 에
+`local.cmake-link-explorer` 가 뜬다. 그다음부터는 CMake 프로젝트를 열거나
+C/C++ 파일을 여는 것만으로 켜진다 — 아이콘을 누를 필요도 없다.
+
+업데이트는 `git pull` 하고 VS Code를 다시 켜면 된다.
 
 # 설정
 
