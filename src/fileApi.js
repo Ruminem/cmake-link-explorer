@@ -228,6 +228,9 @@ function loadModel(buildDir, wantedConfiguration) {
       sourceDir: (target.paths && target.paths.source) || '',
       dependencyIds: (target.dependencies || []).map((d) => d.id),
       linkFragments: linkLibraryFragments(target),
+      // Relative to the source root. Needed to work out which target compiles a
+      // given file, and which one provides a given header.
+      sources: (target.sources || []).map((s) => s.path),
       sourceCount: (target.sources || []).length
     });
   }

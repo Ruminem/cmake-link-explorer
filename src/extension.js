@@ -5,6 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const fileApi = require('./fileApi');
 const mapFile = require('./mapFile');
+const includeResolver = require('./includeResolver');
+const cmakeEdit = require('./cmakeEdit');
 const { TargetTreeProvider, SHORT_TYPE } = require('./tree');
 const { MapTreeProvider } = require('./mapTree');
 
@@ -57,6 +59,14 @@ function activate(context) {
   register('cmakeLinkExplorer.openMap', openMap);
   register('cmakeLinkExplorer.diffMaps', diffMaps);
   register('cmakeLinkExplorer.closeMap', closeMap);
+  register('cmakeLinkExplorer.linkForInclude', linkForInclude);
+  register('cmakeLinkExplorer.applyLinkForInclude', reportInclude);
+
+  context.subscriptions.push(
+    vscode.languages.registerCodeActionsProvider(
+      [{ language: 'cpp' }, { language: 'c' }, { language: 'objective-cpp' }],
+      new LinkIncludeActionProvider(),
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }));
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -80,6 +90,9 @@ function activate(context) {
     getBuildDirectory: () => currentBuildDir,
     getMapProvider: () => mapProvider,
     loadMap: loadMapFile,
+    resolveInclude: (file, include) =>
+      includeResolver.resolve(provider.model, file, include, fileApi.isLinkable),
+    planLinkEdit: (target, library) => cmakeEdit.planLinkEdit(provider.model, target, library),
     compareMaps: compareMapFiles,
     closeMap: closeMap,
     getSizes: () => provider.sizes
@@ -125,6 +138,7 @@ async function reload() {
 
   try {
     const model = fileApi.loadModel(buildDir, config().get('configuration', ''));
+    resolveCache = new Map();
     provider.setModel(model);
     applySizesToTargets();
     watchReply(buildDir);
@@ -338,6 +352,192 @@ async function copyName(node) {
   if (!provider.model || !node || !node.id) return;
   const target = provider.model.targets.get(node.id);
   if (target) await vscode.env.clipboard.writeText(target.name);
+}
+
+// ------------------------------------------------------- includes -> linking
+
+// resolve() touches the filesystem, and the code action provider is asked on
+// every cursor move, so results are cached until the model reloads.
+let resolveCache = new Map();
+
+function resolveInclude(document, includePath) {
+  if (!provider.model) return null;
+  const key = document.uri.fsPath + ' ' + includePath;
+  if (resolveCache.has(key)) return resolveCache.get(key);
+
+  let result = null;
+  try {
+    result = includeResolver.resolve(
+      provider.model, document.uri.fsPath, includePath, fileApi.isLinkable);
+  } catch (e) {
+    result = null;
+  }
+  if (resolveCache.size > 500) resolveCache.clear();
+  resolveCache.set(key, result);
+  return result;
+}
+
+function includeAt(document, line) {
+  if (line < 0 || line >= document.lineCount) return null;
+  return includeResolver.parseIncludeLine(document.lineAt(line).text);
+}
+
+/**
+ * Offers the fix on the #include line itself, which is where the question comes
+ * up: you have just typed the include and the build has not been run yet.
+ */
+class LinkIncludeActionProvider {
+  provideCodeActions(document, range) {
+    const includePath = includeAt(document, range.start.line);
+    if (!includePath) return [];
+
+    const result = resolveInclude(document, includePath);
+    if (!result || (result.status !== 'needs-link' && result.status !== 'transitive')) return [];
+
+    const direct = result.status === 'needs-link';
+    const action = new vscode.CodeAction(
+      (direct ? 'Link ' : 'Link ') + result.provider.name + ' from ' + result.from.name +
+        (direct ? '' : ' (currently only transitive)'),
+      vscode.CodeActionKind.QuickFix);
+    action.command = {
+      command: 'cmakeLinkExplorer.applyLinkForInclude',
+      title: 'Add target_link_libraries',
+      arguments: [document.uri.fsPath, includePath]
+    };
+    action.isPreferred = direct;
+    return [action];
+  }
+}
+
+async function linkForInclude() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showInformationMessage('Open a source file first.');
+    return;
+  }
+  if (!provider.model) {
+    vscode.window.showWarningMessage('No CMake targets loaded yet.');
+    return;
+  }
+
+  let includePath = includeAt(editor.document, editor.selection.active.line);
+  if (!includePath) includePath = await pickIncludeFromDocument(editor.document);
+  if (!includePath) return;
+
+  await reportInclude(editor.document.uri.fsPath, includePath);
+}
+
+async function pickIncludeFromDocument(document) {
+  const items = [];
+  for (let line = 0; line < document.lineCount; line++) {
+    const value = includeResolver.parseIncludeLine(document.lineAt(line).text);
+    if (value) items.push({ label: value, description: 'line ' + (line + 1), value });
+  }
+  if (!items.length) {
+    vscode.window.showInformationMessage('No #include lines in this file.');
+    return null;
+  }
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Which include do you need linked?'
+  });
+  return picked ? picked.value : null;
+}
+
+async function reportInclude(filePath, includePath) {
+  const document = await vscode.workspace.openTextDocument(filePath);
+  const result = resolveInclude(document, includePath);
+  if (!result) return;
+
+  const header = '#include "' + includePath + '"';
+
+  switch (result.status) {
+    case 'unknown-target':
+      vscode.window.showWarningMessage(
+        path.basename(filePath) + ' is not part of any CMake target in this build.');
+      return;
+
+    case 'not-found':
+      vscode.window.showInformationMessage(
+        'No CMake target in this project provides ' + includePath +
+        '. It may come from a header-only INTERFACE library or from outside the project.');
+      return;
+
+    case 'same-target':
+      vscode.window.showInformationMessage(
+        includePath + ' belongs to ' + result.from.name + ' itself. Nothing to link.');
+      return;
+
+    case 'already-linked':
+      vscode.window.showInformationMessage(
+        result.from.name + ' already links ' + result.provider.name + ', so ' + header + ' works.');
+      return;
+
+    case 'transitive': {
+      const choice = await vscode.window.showWarningMessage(
+        result.provider.name + ' reaches ' + result.from.name +
+          ' only through another library. That compiles today and breaks the day the ' +
+          'library in the middle stops using it.',
+        'Link it directly', 'Leave it');
+      if (choice === 'Link it directly') await applyLink(result);
+      return;
+    }
+
+    case 'needs-link': {
+      const choice = await vscode.window.showInformationMessage(
+        includePath + ' comes from ' + result.provider.name + ', which ' +
+          result.from.name + ' does not link.',
+        result.suggestion, 'Show other candidates');
+      if (choice === result.suggestion) await applyLink(result);
+      else if (choice) await showCandidates(result);
+      return;
+    }
+
+    default:
+      return;
+  }
+}
+
+async function showCandidates(result) {
+  const items = result.candidates.map((candidate) => ({
+    label: candidate.target.name,
+    description: candidate.how === 'listed' ? 'lists this header'
+      : candidate.how === 'owned' ? 'the header is in its directory'
+        : 'a file of that name is under its directory',
+    detail: candidate.file,
+    candidate
+  }));
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Which library actually provides it?'
+  });
+  if (picked) {
+    await applyLink(Object.assign({}, result, { provider: picked.candidate.target }));
+  }
+}
+
+async function applyLink(result) {
+  const plan = cmakeEdit.planLinkEdit(provider.model, result.from, result.provider.name);
+  if (plan.kind === 'manual') {
+    vscode.window.showWarningMessage(plan.reason);
+    return;
+  }
+
+  const document = await vscode.workspace.openTextDocument(plan.file);
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(document.uri, new vscode.Position(plan.position.line, plan.position.character), plan.insert);
+  const applied = await vscode.workspace.applyEdit(edit);
+  if (!applied) {
+    vscode.window.showErrorMessage('Could not edit ' + path.basename(plan.file));
+    return;
+  }
+
+  const editor = await vscode.window.showTextDocument(document);
+  const line = Math.min(plan.position.line + (plan.kind === 'create' ? 1 : 0), document.lineCount - 1);
+  editor.selection = new vscode.Selection(new vscode.Position(line, 0), new vscode.Position(line, 0));
+  editor.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenter);
+
+  vscode.window.showInformationMessage(
+    plan.preview + '  —  re-run CMake for the change to take effect.', 'Run CMake configure')
+    .then((choice) => { if (choice) runConfigure(); });
 }
 
 // ---------------------------------------------------------------- map files

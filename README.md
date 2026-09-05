@@ -1,13 +1,64 @@
 # CMake Link Explorer
 
-C++ 빌드의 **연결 구조와 크기**를 VS Code 안에서 보는 익스텐션. 탭 두 개다.
+CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 익스텐션.
 
-| 탭 | 답하는 질문 |
+| 기능 | 답하는 질문 | 언제 쓰나 |
+|---|---|---|
+| **Link for include** | 이 헤더 쓰려면 **뭘 링크해야 하나** | `#include` 쓰고 막혔을 때 |
+| **Targets** | 무엇이 무엇을 링크하나, 특히 **누가 이걸 링크하나** | 구조 파악, 영향 범위 |
+| **Linker Map** | **뭐가 용량을 먹나**, 지난 빌드 대비 뭐가 늘었나 | 바이너리가 커졌을 때 |
+
+---
+
+# Link for include
+
+가장 자주 막히는 지점이다.
+
+> "이 헤더를 include해서 안에 있는 API를 쓰려는데,
+>  CMakeLists.txt에 뭘 어떻게 링크해야 하는지 모르겠다."
+
+`#include` 줄에 커서를 두면 **전구(Quick Fix)** 가 뜬다.
+
+```cpp
+#include "dlt_wrapper.h"     💡 Link dlt_wrapper from nds_test
+```
+
+누르면 알맞은 `CMakeLists.txt`를 찾아 고친다.
+
+```cmake
+target_link_libraries(nds_test PRIVATE nds_reader dlt_wrapper)
+                                                  ^^^^^^^^^^^ 추가됨
+```
+
+기존 `target_link_libraries` 호출이 있으면 거기에 붙이고, 없으면
+`add_library`/`add_executable` 바로 다음에 새로 만든다. 같은 파일의 다른
+타겟은 건드리지 않는다.
+
+## 네 가지 판정
+
+| 상태 | 뜻 |
 |---|---|
-| **Targets** | 무엇이 무엇을 링크하나 — 특히 **누가 이 타겟을 링크하나** |
-| **Linker Map** | 그래서 **뭐가 용량을 먹나**, 그리고 지난 빌드 대비 뭐가 늘었나 |
+| **already-linked** | 직접 링크돼 있다. 그냥 쓰면 된다 |
+| **transitive** | 다른 라이브러리를 거쳐서만 닿는다. **오늘은 컴파일되지만** 중간 라이브러리가 그걸 안 쓰게 되는 날 깨진다 |
+| **needs-link** | 링크가 없다. 추가할 줄을 그대로 만들어준다 |
+| **not-found** | 이 프로젝트의 어떤 타겟도 제공하지 않는다 |
 
-둘 다 CMakeLists.txt나 빌드 로그를 뒤져서는 답이 안 나오는 것들이다.
+`transitive`를 따로 구분하는 게 핵심이다. 빌드가 되니까 아무도 눈치 못 채다가
+나중에 남의 커밋 때문에 깨지는 종류의 문제라서.
+
+## 어떻게 찾나
+
+헤더 → 타겟은 세 단계로 찾고, 신뢰도 순으로 보여준다.
+
+1. **listed** — 타겟의 소스 목록에 그 헤더가 있다 (CMake가 아는 것, 확실)
+2. **owned** — 헤더가 그 타겟의 소스 디렉토리 안에 있다
+3. **nearby** — 그 이름의 파일이 타겟 디렉토리 아래 어딘가에 있다
+
+파일이 속한 타겟은 CMake의 소스 목록에서 역으로 찾는다.
+
+**한계 —** 헤더 전용 INTERFACE 라이브러리는 CMake 코드모델에 타겟으로 나오지
+않아서 찾을 수 없다. abseil의 `absl::config` 같은 것들이 여기 해당한다.
+그럴 땐 `not-found`라고 정직하게 말한다.
 
 ---
 
@@ -233,6 +284,7 @@ node test/run.js /path/to/any/build               아무 CMake 프로젝트나
 node test/tree-test.js                            타겟 트리 렌더링
 node test/map-test.js                             맵 파서 + 맵 트리
 node test/map-test.js /path/to/x.map              맵 파일 하나 뜯어보기
+node test/include-test.js                         include -> 링크 해결 + CMakeLists 편집
 ```
 
 실제 VS Code 확장 호스트 안에서 (활성화, 명령 등록, 트리, 에디터 점프, 맵 탭):
@@ -261,7 +313,8 @@ cat /tmp/it.log
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 15 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 | 46 checks |
-| VS Code 확장 호스트 (1.136) | 30 checks |
+| include → 링크 해결 + CMakeLists 편집 | 23 checks |
+| VS Code 확장 호스트 (1.136) | 35 checks |
 
 # 앞으로
 

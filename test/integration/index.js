@@ -65,6 +65,7 @@ async function runChecks() {
 
   const model = api.getModel();
   const provider = api.getProvider();
+  const workspace = vscode.workspace.workspaceFolders[0].uri.fsPath;
 
   await check('the extension activates', () => {
     assert.strictEqual(extension.isActive, true);
@@ -249,6 +250,62 @@ async function runChecks() {
     await vscode.commands.executeCommand('cmakeLinkExplorer.copyName', node);
     assert.strictEqual(await vscode.env.clipboard.readText(), 'sqlite_wrap');
   });
+
+  // ------------------------------------------------- include -> link resolving
+
+  await check('an include that already works is reported as linked', () => {
+    const result = api.resolveInclude(
+      path.join(workspace, 'app', 'navi_app.cpp'), 'map_engine.h');
+    assert.strictEqual(result.status, 'already-linked');
+    assert.strictEqual(result.provider.name, 'map_engine');
+  });
+
+  await check('an include that only works transitively is flagged', () => {
+    const result = api.resolveInclude(
+      path.join(workspace, 'app', 'navi_app.cpp'), 'geo_utils.h');
+    assert.strictEqual(result.status, 'transitive');
+  });
+
+  await check('a missing link produces the exact CMake line', () => {
+    const result = api.resolveInclude(
+      path.join(workspace, 'tests', 'nds_test.cpp'), 'dlt_wrapper.h');
+    assert.strictEqual(result.status, 'needs-link');
+    assert.strictEqual(result.suggestion, 'target_link_libraries(nds_test PRIVATE dlt_wrapper)');
+
+    const plan = api.planLinkEdit(result.from, result.provider.name);
+    assert.strictEqual(plan.kind, 'append');
+    assert.ok(plan.file.endsWith(path.join('tests', 'CMakeLists.txt')), plan.file);
+  });
+
+  // The quick fix is the point of the feature: it has to appear on the #include
+  // line itself, which means going through VS Code's real code action pipeline.
+  const probe = path.join(workspace, 'tests', '_probe_generated.cpp');
+  try {
+    fs.writeFileSync(probe, '#include "dlt_wrapper.h"\nint probe() { return 0; }\n');
+    const uri = vscode.Uri.file(probe);
+    const document = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(document, { preview: true });
+
+    await check('a quick fix is offered on the #include line', async () => {
+      const actions = await vscode.commands.executeCommand(
+        'vscode.executeCodeActionProvider', uri, new vscode.Range(0, 0, 0, 24));
+      const ours = (actions || []).filter(
+        (a) => a.command && a.command.command === 'cmakeLinkExplorer.applyLinkForInclude');
+      assert.strictEqual(ours.length, 1, 'expected one quick fix, got ' + ours.length);
+      assert.ok(/dlt_wrapper/.test(ours[0].title), 'title was ' + ours[0].title);
+      assert.strictEqual(ours[0].kind.value, vscode.CodeActionKind.QuickFix.value);
+    });
+
+    await check('no quick fix on a line that is not an include', async () => {
+      const actions = await vscode.commands.executeCommand(
+        'vscode.executeCodeActionProvider', uri, new vscode.Range(1, 0, 1, 10));
+      const ours = (actions || []).filter(
+        (a) => a.command && a.command.command === 'cmakeLinkExplorer.applyLinkForInclude');
+      assert.deepStrictEqual(ours, []);
+    });
+  } finally {
+    try { fs.unlinkSync(probe); } catch (e) { /* best effort */ }
+  }
 
   // ---------------------------------------------------------- linker map tab
 

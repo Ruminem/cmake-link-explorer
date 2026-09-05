@@ -104,6 +104,17 @@
         "title": "Close Map",
         "category": "CMake Links",
         "icon": "$(close)"
+      },
+      {
+        "command": "cmakeLinkExplorer.linkForInclude",
+        "title": "Which Library Provides This Include?",
+        "category": "CMake Links",
+        "icon": "$(library)"
+      },
+      {
+        "command": "cmakeLinkExplorer.applyLinkForInclude",
+        "title": "Link The Library For This Include",
+        "category": "CMake Links"
       }
     ],
     "menus": {
@@ -159,6 +170,19 @@
           "command": "cmakeLinkExplorer.copyName",
           "when": "view == cmakeLinkExplorer.targets && viewItem =~ /^target/",
           "group": "1_copy"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "cmakeLinkExplorer.linkForInclude",
+          "when": "editorLangId == cpp || editorLangId == c",
+          "group": "navigation@9"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "cmakeLinkExplorer.applyLinkForInclude",
+          "when": "false"
         }
       ]
     },
