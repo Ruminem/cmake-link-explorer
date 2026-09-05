@@ -11,6 +11,29 @@ CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 
 | **Cycles / Unused** | **순환 링크와 아무도 안 쓰는 라이브러리** | 구조 정리할 때 |
 | **Compare Trees** | 두 빌드 트리가 **어디서 갈라지나** | 여기선 되는데 저기선 깨질 때 |
 
+## 어디서 답을 가져오나
+
+**`CMakeLists.txt`를 파싱하지 않는다.** CMake와 링커가 이미 만들어 둔 결과물을 읽는다.
+그래서 제너레이터 표현식이든 조건부 링크든 헬퍼 함수든, 해석은 이미 끝난 상태로 온다.
+
+```mermaid
+flowchart LR
+    CML["CMakeLists.txt"] -->|"cmake 실행"| REPLY["File API 코드모델<br/>build/.cmake/api/v1/reply"]
+    SRC["C++ 소스"] -->|"컴파일 + 링크"| MAP["링커 맵 파일<br/>-Wl,-Map=out.map"]
+
+    EXT["CMake Link Explorer"]
+    REPLY --> EXT
+    MAP --> EXT
+
+    EXT --> T["Targets<br/>무엇이 무엇을 링크하나"]
+    EXT --> L["Linker Map<br/>뭐가 용량을 먹나"]
+    EXT --> Q["Quick Fix / 명령<br/>뭘 링크해야 하나"]
+```
+
+코드모델에는 타겟·의존성·매크로·include 경로와 **각 항목이 쓰여진 `파일:줄`**까지
+들어 있다. 맵 파일에는 무엇이 몇 바이트를 차지하는지가 들어 있다. 두 쪽을 이어 붙이는
+것이 이 익스텐션이 하는 일이다.
+
 # 설치
 
 빌드도 패키징도 의존성도 없다. 순수 JavaScript라 클론해서 링크만 걸면 끝이다.
@@ -92,6 +115,19 @@ target_link_libraries(store_test PRIVATE store_reader log_wrapper)
 
 `transitive`를 따로 구분하는 게 핵심이다. 빌드가 되니까 아무도 눈치 못 채다가
 나중에 남의 커밋 때문에 깨지는 종류의 문제라서.
+
+```mermaid
+flowchart LR
+    app["app"] -->|"링크한다"| engine["engine"]
+    engine -->|"PUBLIC 으로 링크한다"| log["log_wrapper"]
+    app -.->|"include 만 한다"| log
+```
+
+`app`은 `log_wrapper`를 직접 링크하지 않는다. `engine`이 `PUBLIC`으로 끌고 오는
+덕에 오늘은 컴파일된다. **누군가 `engine`에서 `log_wrapper` 링크를 떼는 날, `app`이
+깨진다.** 고친 사람은 자기가 뭘 깼는지 모르고, 깨진 쪽은 왜 깨졌는지 모른다.
+
+점선을 실선으로 만들라는 것이 `transitive` 판정이다.
 
 ## 어떻게 찾나
 
@@ -211,7 +247,31 @@ File API의 `dependencies`는 **빌드 순서 기준 전이적 폐포**다. 실�
 `target_link_libraries`에 세 줄 적은 타겟이 50개를 링크하는 것처럼 보인다.
 
 그래서 도달성을 보존하는 **최소 간선 집합**으로 줄여서 보여준다.
-실측 (abseil-cpp, 타겟 121개):
+
+```mermaid
+flowchart TB
+    subgraph raw["CMake가 주는 dependencies — 전이적 폐포 (간선 6개)"]
+        direction LR
+        a1["app"] --> b1["engine"]
+        a1 --> c1["store_reader"]
+        a1 --> d1["math_utils"]
+        b1 --> c1
+        b1 --> d1
+        c1 --> d1
+    end
+
+    subgraph reduced["축약 후 — 사람이 실제로 쓴 구조 (간선 3개)"]
+        direction LR
+        a2["app"] --> b2["engine"]
+        b2 --> c2["store_reader"]
+        c2 --> d2["math_utils"]
+    end
+
+    raw -->|"전이 축약"| reduced
+```
+
+간선 6개가 3개가 됐는데 **닿을 수 있는 관계는 그대로다.** `app`에서 `math_utils`로
+가는 길은 여전히 있다. 실측 (abseil-cpp, 타겟 121개):
 
 | | |
 |---|---|
@@ -283,6 +343,27 @@ CMake는 **정적 라이브러리끼리의 순환을 허용한다.** 링크 줄�
 문제는 File API의 `dependencies`가 **빌드 순서**라는 것이다. 순서에 순환이 있을 수
 없으니 CMake가 **순환을 닫는 간선을 빼고** 준다. `c`가 `a`를 링크해도
 `c.dependencies`는 비어서 온다.
+
+```mermaid
+flowchart TB
+    subgraph written["linkLibraries — target_link_libraries 에 쓴 그대로"]
+        direction LR
+        a1["a"] --> b1["b"]
+        b1 --> c1["c"]
+        c1 -->|"순환을 닫는 간선"| a1
+    end
+
+    subgraph deps["dependencies — 빌드 순서라 순환일 수 없다"]
+        direction LR
+        a2["a"] --> b2["b"]
+        b2 --> c2["c"]
+    end
+
+    written -->|"CMake가 c → a 를 빼고 준다"| deps
+```
+
+왼쪽만 보면 순환이 보이고, 오른쪽만 보면 평범한 사슬로 보인다.
+그래서 이 검사는 `linkLibraries` 쪽을 읽는다.
 
 그래서 이 검사는 `linkLibraries`(쓰여진 그대로의 링크 목록)를 읽는다. 구형
 코드모델에는 그 필드가 없는데, 그럴 땐 **"없음"이 아니라 "판단 불가"라고 말한다.**
