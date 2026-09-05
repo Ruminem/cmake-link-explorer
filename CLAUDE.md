@@ -36,7 +36,31 @@ node test/include-test.js   # include 해결 + CMakeLists 편집
 확장 호스트 통합 테스트는 플랫폼마다 VS Code 실행 경로가 다르다. README의
 "테스트" 절 참고.
 
-## 플랫폼 주의 (맥/윈도우 양쪽에서 작업함)
+## 대상 플랫폼 — 윈도우
+
+**이 익스텐션은 윈도우에서 쓰려고 만든다.** 프로젝트가 맥북에서 시작됐고 개발도
+양쪽 기기에서 하지만, 그건 개발 환경일 뿐 대상이 아니다. **OS 의존성을 새로 만들지
+않는다.** 맥에서만 되는 코드, 맥 관례를 전제한 판정, 맥 경로를 가정한 테스트는
+들어가면 안 된다.
+
+현재 남아 있는 OS 의존성 (알고 있는 것):
+
+- `mapFile.detectFormat`이 GNU ld와 Apple ld64만 인식한다. MSVC `link.exe /MAP`은
+  미지원 — MSVC를 쓰면 Linker Map 기능이 통째로 동작하지 않는다.
+- `demanglerCommand` 기본값이 `c++filt`다. 윈도우에 없고, MSVC 맹글링은 스킴이
+  달라서 `c++filt`가 있어도 못 푼다.
+- `fileApi.isLibraryFragment`가 `-l`/`-framework`(GCC/Clang 관례)로 판정한다.
+  MSVC는 `foo.lib`으로 넘어와 인식되지 않는다.
+- `test/make-fixture.py`가 산출물 이름을 `lib{}.dylib` / `lib{}.a`로 하드코딩한다.
+  조인 테스트가 이 픽스처를 쓰므로 윈도우 이름(`.dll`/`.lib`)은 검증되지 않는다.
+
+단, GNU 계열 툴체인(MinGW, arm-none-eabi-gcc)을 윈도우에서 쓰는 경우에는 위
+1~3번이 실제로는 정상 동작한다. 무엇을 고칠지는 대상 툴체인이 정해진 뒤에 판단한다.
+
+새 포맷을 **실물 샘플 없이 추측해서 넣지 않는다.** 조용히 틀린 숫자를 보여주는 것이
+미지원보다 나쁘다 (README의 lld 미지원 사유와 같은 원칙).
+
+## 개발 환경 주의 (맥/윈도우 양쪽에서 작업함)
 
 - **README의 명령은 macOS 기준으로 쓰여 있다.** `ln -s`, `/Applications/...`,
   `/tmp/...`는 윈도우에서 안 통한다. 윈도우는 `mklink /J`와 `%USERPROFILE%` 경로.

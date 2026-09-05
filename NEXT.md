@@ -1,24 +1,28 @@
 # NEXT
 
-**여기까지 됨** — 맵↔타겟 조인 테스트의 이식성을 고쳤다. 조인은 `nameOnDisk`를 정확히
-키로 삼는데(실사용에선 맵과 빌드 트리가 같은 빌드에서 나오므로 이게 옳다), 테스트가
-커밋된 ld64 맵(`librender_core.dylib`)을 **로컬 configure 산출물**과 맞추고 있어서
-맥 밖에서는 구조적으로 실패했다. 타겟 쪽을 `test/fixture/build`(합성 픽스처,
-`lib{}.dylib`을 하드코딩)로 바꿔 어느 플랫폼에서든 같은 결과가 나오게 했다.
-제품 코드는 건드리지 않았다. **cmake가 전혀 없는 윈도우에서 87개 통과, 실패 0**
-(`map-test` 49/49 — 이전엔 조인 9개를 통째로 건너뛰었다).
+**여기까지 됨** — 맵↔타겟 조인 테스트가 macOS에서만 통과하던 것을 고쳐, cmake 없이
+어느 플랫폼에서든 돌게 했다(`test/fixture/build` 사용, 제품 코드는 안 건드림).
+윈도우에서 87개 통과, 실패 0. 그 뒤 **이 익스텐션의 대상 플랫폼이 윈도우**라는 것이
+확인돼, 그 전제로 소스를 훑어 OS 의존성을 정리했다. CLAUDE.md에 대상 플랫폼 절을 추가.
 
-**다음 할 것** — `include-test`의 나머지 28개에 같은 수법이 통하는지 본다. 지금은
-`test/sample-project/build`를 요구해 cmake 없이는 2개만 돈다. 합성 픽스처의 SOURCE가
-sample-project를 가리키므로 헤더 해석이 그대로 될 가능성이 있다(미검증). 되면
-윈도우/리눅스에서도 include 해석이 전부 검증된다. 그다음은 README의 macOS 전용
-명령 병기(`ln -s` → `mklink /J`, VS Code 실행 경로, `/tmp/...`, `python3` → `python`).
+**다음 할 것** — 먼저 **대상 툴체인을 정한다(MSVC냐 GNU 계열이냐).** 이게 아래 항목의
+크기를 완전히 바꾼다. GNU 계열(MinGW, arm-none-eabi-gcc)이면 1~3번은 이미 동작하므로
+할 일은 4번과 문서뿐이다. MSVC라면 1번이 큰 작업이 된다.
+
+발견된 OS 의존성:
+
+1. `mapFile.detectFormat` — GNU ld / Apple ld64만 인식. MSVC `link.exe /MAP` 미지원이라
+   MSVC를 쓰면 Linker Map 기능이 통째로 죽는다. (실물 샘플 없이 포맷을 추측해
+   넣지 않는다는 원칙은 유지 — lld를 뺀 것과 같은 이유)
+2. `demanglerCommand` 기본값 `c++filt` — 윈도우에 없고, MSVC 맹글링은 스킴이 달라
+   `c++filt`가 있어도 못 푼다. `undname` 계열이 필요하다.
+3. `fileApi.isLibraryFragment` — `-l`/`-framework`로 판정(GCC/Clang 관례).
+   MSVC는 `foo.lib`으로 넘어와 라이브러리로 인식되지 않는다.
+4. `test/make-fixture.py`가 `lib{}.dylib`/`lib{}.a`를 하드코딩 — 조인 테스트가 이걸
+   쓰므로 윈도우 이름(`.dll`/`.lib`)으로는 조인이 한 번도 검증되지 않는다.
+   픽스처가 플랫폼별 이름을 낼 수 있게 하고 윈도우 케이스를 추가해야 한다.
 
 **막힌 것** — 확장 호스트 35개는 VS Code 실행 경로가 macOS 전용이라 미실행.
-`c++filt`가 윈도우에 없어 `demanglerCommand` 기본값이 실사용에서 무용지물이다
-(코드는 안전하게 처리하고 그 테스트도 통과하지만, 디맹글링 자체가 안 된다).
-윈도우엔 C++ 컴파일러가 없어 진짜 빌드는 여전히 불가.
-
-**참고 — 트레이드오프** — 조인이 이제 실제 CMake 산출물 이름을 검증하지 않는다.
-합성 픽스처는 codemodel-v2를 충실히 따르고, 실제 CMake 트리를 읽는 경로는
-`run.js`가 따로 덮는다. 둘을 합치면 커버되지만 한 테스트 안에서는 아니다.
+`include-test`는 28개가 여전히 실제 빌드 트리를 요구한다(합성 픽스처로 풀리는지
+미검증). 윈도우에 C++ 컴파일러가 없어 진짜 빌드는 불가. README의 설치·통합테스트
+명령도 macOS 전용이다(`ln -s`, `/Applications/...`, `/tmp/...`, `python3` → `python`).
