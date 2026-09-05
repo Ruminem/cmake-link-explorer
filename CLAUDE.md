@@ -43,19 +43,35 @@ node test/include-test.js   # include 해결 + CMakeLists 편집
 않는다.** 맥에서만 되는 코드, 맥 관례를 전제한 판정, 맥 경로를 가정한 테스트는
 들어가면 안 된다.
 
-현재 남아 있는 OS 의존성 (알고 있는 것):
+### 실제 사용 형태 (중요)
 
-- `mapFile.detectFormat`이 GNU ld와 Apple ld64만 인식한다. MSVC `link.exe /MAP`은
-  미지원 — MSVC를 쓰면 Linker Map 기능이 통째로 동작하지 않는다.
-- `demanglerCommand` 기본값이 `c++filt`다. 윈도우에 없고, MSVC 맹글링은 스킴이
-  달라서 `c++filt`가 있어도 못 푼다.
-- `fileApi.isLibraryFragment`가 `-l`/`-framework`(GCC/Clang 관례)로 판정한다.
-  MSVC는 `foo.lib`으로 넘어와 인식되지 않는다.
+**윈도우 Visual Studio에서 개발하고, 제품 빌드는 리눅스에서 한다.** 툴체인은 GNU
+계열이다. 즉 **맵 파일과 CMake 빌드 트리가 서로 다른 OS에서 나온다.** 맵은 리눅스
+GNU ld가 만든 것(`libfoo.a`, `libfoo.so`)이고, 손에 쥔 빌드 트리는 윈도우에서
+configure한 것(`foo.lib`, `foo.dll`)일 수 있다.
+
+`mapFile.matchTargets`는 `nameOnDisk`를 **정확히** 키로 삼아서, 이 조합에서는
+아무것도 매칭되지 않는다. 에러도 없이 크기 열이 비어 보인다. 재현 확인함:
+같은 GNU 맵에 리눅스 트리는 1개 매칭, 윈도우 트리는 0개.
+
+"맵과 빌드 트리는 같은 빌드에서 나오니 정확 매칭이 옳다"는 전제는 이 프로젝트에
+**해당되지 않는다.** 크로스 OS 조인이 정상 사용 시나리오다.
+
+### 현재 남아 있는 OS 의존성
+
+- **크로스 OS 조인 실패** (위 항목). 가장 실질적인 문제.
+- `demanglerCommand` 기본값이 `c++filt`다. 윈도우에 없다. 리눅스에서 만든 맵의
+  GCC 심볼을 윈도우에서 풀어야 하므로 실제로 걸린다. 툴체인의
+  `arm-none-eabi-c++filt` 등을 설정하거나 기본값 탐색을 넓혀야 한다.
 - `test/make-fixture.py`가 산출물 이름을 `lib{}.dylib` / `lib{}.a`로 하드코딩한다.
-  조인 테스트가 이 픽스처를 쓰므로 윈도우 이름(`.dll`/`.lib`)은 검증되지 않는다.
+  조인 테스트가 이 픽스처를 쓰므로 윈도우/리눅스 이름 조합은 검증되지 않는다.
+- `mapFile.detectFormat`은 GNU ld와 Apple ld64만 인식한다. 제품 빌드가 리눅스
+  GNU ld이므로 **현재 용도에서는 문제가 되지 않는다.** MSVC로 빌드할 일이
+  생기면 그때 다시 본다.
 
-단, GNU 계열 툴체인(MinGW, arm-none-eabi-gcc)을 윈도우에서 쓰는 경우에는 위
-1~3번이 실제로는 정상 동작한다. 무엇을 고칠지는 대상 툴체인이 정해진 뒤에 판단한다.
+정정 이력: `fileApi.isLibraryFragment`가 MSVC `.lib`을 놓친다고 적었던 적이 있으나
+**틀렸다.** 대시로 시작하지 않는 조각은 전부 라이브러리로 받으므로 `foo.lib`,
+`kernel32.lib` 모두 정상 인식된다.
 
 새 포맷을 **실물 샘플 없이 추측해서 넣지 않는다.** 조용히 틀린 숫자를 보여주는 것이
 미지원보다 나쁘다 (README의 lld 미지원 사유와 같은 원칙).
