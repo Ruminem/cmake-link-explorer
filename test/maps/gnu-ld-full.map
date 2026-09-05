@@ -1,7 +1,8 @@
 Archive member included to satisfy reference by file (symbol)
 
-libnavicore.a(geo_utils.o)    app.o (geo_project)
-libnavicore.a(nds_reader.o)   app.o (nds_open)
+libdemocore.a(math_utils.o)   app.o (math_project)
+libdemocore.a(store_reader.o)
+                              app.o (store_open)
 
 Merging object attributes
 
@@ -30,18 +31,18 @@ Linker script and memory map
  .text.app_init
                 0x0800008a       0xd2 app.o
                 0x0800008a                app_init
- .text          0x0800015c        0x0 map_engine.o
- .text.map_engine_load
-                0x0800015c      0x38a map_engine.o
-                0x0800015c                map_engine_load
- .text          0x080004e6        0x0 libnavicore.a(geo_utils.o)
- .text.geo_project
-                0x080004e6      0x156 libnavicore.a(geo_utils.o)
-                0x080004e6                geo_project
- .text          0x0800063c        0x0 libnavicore.a(nds_reader.o)
- .text.nds_open
-                0x0800063c      0x5de libnavicore.a(nds_reader.o)
-                0x0800063c                nds_open
+ .text          0x0800015c        0x0 engine.o
+ .text.engine_load
+                0x0800015c      0x38a engine.o
+                0x0800015c                engine_load
+ .text          0x080004e6        0x0 libdemocore.a(math_utils.o)
+ .text.math_project
+                0x080004e6      0x156 libdemocore.a(math_utils.o)
+                0x080004e6                math_project
+ .text          0x0800063c        0x0 libdemocore.a(store_reader.o)
+ .text.store_open
+                0x0800063c      0x5de libdemocore.a(store_reader.o)
+                0x0800063c                store_open
 
 .glue_7         0x08000c1c        0x0
  .glue_7        0x08000c1c        0x0 linker stubs
@@ -58,50 +59,50 @@ Linker script and memory map
 .iplt           0x08000c1c        0x0
  .iplt          0x08000c1c        0x0 startup.o
 
-.rodata         0x08000c1a      0x279
+.rodata         0x08000c1a      0x271
  *(.rodata*)
  .rodata.app_banner
-                0x08000c1a       0x79 app.o
+                0x08000c1a       0x71 app.o
                 0x08000c1a                app_banner
- .rodata.geo_table
-                0x08000c93      0x200 libnavicore.a(geo_utils.o)
-                0x08000c93                geo_table
+ .rodata.math_table
+                0x08000c8b      0x200 libdemocore.a(math_utils.o)
+                0x08000c8b                math_table
 
-.rel.dyn        0x08000e94        0x0
- .rel.iplt      0x08000e94        0x0 startup.o
+.rel.dyn        0x08000e8c        0x0
+ .rel.iplt      0x08000e8c        0x0 startup.o
 
-.data           0x20000000        0x4 load address 0x08000e93
+.data           0x20000000        0x4 load address 0x08000e8b
  *(.data*)
  .data          0x20000000        0x0 startup.o
  .data          0x20000000        0x0 app.o
- .data          0x20000000        0x0 map_engine.o
- .data.map_cache_size
-                0x20000000        0x4 map_engine.o
-                0x20000000                map_cache_size
- .data          0x20000004        0x0 libnavicore.a(geo_utils.o)
- .data          0x20000004        0x0 libnavicore.a(nds_reader.o)
+ .data          0x20000000        0x0 engine.o
+ .data.cache_size
+                0x20000000        0x4 engine.o
+                0x20000000                cache_size
+ .data          0x20000004        0x0 libdemocore.a(math_utils.o)
+ .data          0x20000004        0x0 libdemocore.a(store_reader.o)
 
-.igot.plt       0x20000004        0x0 load address 0x08000e97
+.igot.plt       0x20000004        0x0 load address 0x08000e8f
  .igot.plt      0x20000004        0x0 startup.o
 
-.bss            0x20000004     0x4800 load address 0x08000e97
+.bss            0x20000004     0x4800 load address 0x08000e8f
  *(.bss*)
  .bss           0x20000004        0x0 startup.o
  .bss           0x20000004        0x0 app.o
  .bss.app_state
                 0x20000004      0x800 app.o
                 0x20000004                app_state
- .bss           0x20000804        0x0 map_engine.o
- .bss           0x20000804        0x0 libnavicore.a(geo_utils.o)
- .bss           0x20000804        0x0 libnavicore.a(nds_reader.o)
- .bss.nds_tile_buffer
-                0x20000804     0x4000 libnavicore.a(nds_reader.o)
-                0x20000804                nds_tile_buffer
+ .bss           0x20000804        0x0 engine.o
+ .bss           0x20000804        0x0 libdemocore.a(math_utils.o)
+ .bss           0x20000804        0x0 libdemocore.a(store_reader.o)
+ .bss.store_buffer
+                0x20000804     0x4000 libdemocore.a(store_reader.o)
+                0x20000804                store_buffer
 LOAD startup.o
 LOAD app.o
-LOAD map_engine.o
-LOAD libnavicore.a
-OUTPUT(navicore.elf elf32-littlearm)
+LOAD engine.o
+LOAD libdemocore.a
+OUTPUT(democore.elf elf32-littlearm)
 LOAD linker stubs
 
 .ARM.attributes
@@ -111,8 +112,8 @@ LOAD linker stubs
  .ARM.attributes
                 0x00000025       0x25 app.o
  .ARM.attributes
-                0x0000004a       0x25 map_engine.o
+                0x0000004a       0x25 engine.o
  .ARM.attributes
-                0x0000006f       0x25 libnavicore.a(geo_utils.o)
+                0x0000006f       0x25 libdemocore.a(math_utils.o)
  .ARM.attributes
-                0x00000094       0x25 libnavicore.a(nds_reader.o)
+                0x00000094       0x25 libdemocore.a(store_reader.o)

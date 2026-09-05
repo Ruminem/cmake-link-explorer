@@ -17,15 +17,15 @@ SOURCE = os.path.join(HERE, "sample-project")
 
 # name, type, source subdir, [dependency names], [external link fragments]
 TARGETS = [
-    ("navi_app",     "EXECUTABLE",     "app",             ["map_engine", "ui_core", "dlt_wrapper"], ["-lsqlite3", "-ldlt", "-lpthread"]),
-    ("map_engine",   "STATIC_LIBRARY", "libs/map_engine", ["nds_reader", "geo_utils"], []),
-    ("nds_reader",   "STATIC_LIBRARY", "libs/nds_reader", ["sqlite_wrap"], []),
-    ("sqlite_wrap",  "STATIC_LIBRARY", "libs/sqlite_wrap", [], []),
-    ("geo_utils",    "STATIC_LIBRARY", "libs/geo_utils",  [], []),
-    ("ui_core",      "SHARED_LIBRARY", "libs/ui_core",    ["geo_utils"], ["-framework CoreGraphics"]),
-    ("dlt_wrapper",  "STATIC_LIBRARY", "libs/dlt_wrapper", [], []),
-    ("map_test",     "EXECUTABLE",     "tests",           ["map_engine"], ["-lgtest_main", "-lgtest"]),
-    ("nds_test",     "EXECUTABLE",     "tests",           ["nds_reader"], ["-lgtest_main"]),
+    ("sample_app",     "EXECUTABLE",     "app",             ["engine", "render_core", "log_wrapper"], ["-lsqlite3", "-lz", "-lpthread"]),
+    ("engine",   "STATIC_LIBRARY", "libs/engine", ["store_reader", "math_utils"], []),
+    ("store_reader",   "STATIC_LIBRARY", "libs/store_reader", ["db_wrap"], []),
+    ("db_wrap",  "STATIC_LIBRARY", "libs/db_wrap", [], []),
+    ("math_utils",    "STATIC_LIBRARY", "libs/math_utils",  [], []),
+    ("render_core",      "SHARED_LIBRARY", "libs/render_core",    ["math_utils"], ["-framework CoreGraphics"]),
+    ("log_wrapper",  "STATIC_LIBRARY", "libs/log_wrapper", [], []),
+    ("engine_test",     "EXECUTABLE",     "tests",           ["engine"], ["-lgtest_main", "-lgtest"]),
+    ("store_test",     "EXECUTABLE",     "tests",           ["store_reader"], ["-lgtest_main"]),
     ("generate_docs", "UTILITY",       ".",               [], []),
 ]
 
@@ -118,7 +118,7 @@ def main():
         "configurations": [{
             "name": "Debug",
             "directories": [{"source": ".", "build": ".", "projectIndex": 0}],
-            "projects": [{"name": "NaviDemo", "directoryIndexes": [0]}],
+            "projects": [{"name": "SampleProject", "directoryIndexes": [0]}],
             "targets": target_files,
         }],
     }

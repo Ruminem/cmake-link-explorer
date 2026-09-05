@@ -1,2 +1,2 @@
-add_executable(navi_app navi_app.cpp)
-target_link_libraries(navi_app PRIVATE map_engine ui_core dlt_wrapper)
+add_executable(sample_app sample_app.cpp)
+target_link_libraries(sample_app PRIVATE engine render_core log_wrapper)

@@ -57,9 +57,9 @@ console.log('--- assertions ---');
 
 check('executables come first, then libraries by how many depend on them', () => {
   assert.deepStrictEqual(roots.map(nameOf), [
-    'map_test', 'navi_app', 'nds_test',      // executables, alphabetical among themselves
-    'geo_utils', 'map_engine', 'nds_reader', // 2 dependents each
-    'dlt_wrapper', 'sqlite_wrap', 'ui_core'  // 1 dependent each
+    'engine_test', 'sample_app', 'store_test',    // executables, alphabetical among themselves
+    'engine', 'math_utils', 'store_reader',       // 2 dependents each
+    'db_wrap', 'log_wrapper', 'render_core'       // 1 dependent each
   ]);
 });
 
@@ -80,33 +80,33 @@ check('UTILITY targets stay out of the list', () => {
 
 check('both counts are on the row, without expanding anything', () => {
   const byName = new Map(roots.map((n) => [nameOf(n), provider.getTreeItem(n)]));
-  assert.strictEqual(byName.get('map_engine').description, '→2 ←2');
-  assert.strictEqual(byName.get('navi_app').description, '→3');
-  assert.strictEqual(byName.get('geo_utils').description, '←2');
+  assert.strictEqual(byName.get('engine').description, '→2 ←2');
+  assert.strictEqual(byName.get('sample_app').description, '→3');
+  assert.strictEqual(byName.get('math_utils').description, '←2');
 });
 
 check('a root target lists both directions directly, no folder in between', () => {
-  const node = roots.find((n) => nameOf(n) === 'map_engine');
+  const node = roots.find((n) => nameOf(n) === 'engine');
   const children = provider.getChildren(node);
   assert.deepStrictEqual(children.map((c) => c.direction + ':' + nameOf(c)), [
-    'forward:geo_utils', 'forward:nds_reader',
-    'reverse:map_test', 'reverse:navi_app'
+    'forward:math_utils', 'forward:store_reader',
+    'reverse:engine_test', 'reverse:sample_app'
   ]);
 });
 
 check('forward children are the direct dependencies only', () => {
-  const node = roots.find((n) => nameOf(n) === 'navi_app');
+  const node = roots.find((n) => nameOf(n) === 'sample_app');
   const forward = provider.getChildren(node).filter((c) => c.direction === 'forward');
-  assert.deepStrictEqual(forward.map(nameOf), ['dlt_wrapper', 'map_engine', 'ui_core']);
+  assert.deepStrictEqual(forward.map(nameOf), ['engine', 'log_wrapper', 'render_core']);
 });
 
 check('showTransitiveDependencies switches to the full closure', () => {
   vscodeStub.__setConfig('showTransitiveDependencies', true);
   try {
-    const node = provider.getChildren().find((n) => nameOf(n) === 'navi_app');
+    const node = provider.getChildren().find((n) => nameOf(n) === 'sample_app');
     const forward = provider.getChildren(node).filter((c) => c.direction === 'forward');
     assert.deepStrictEqual(forward.map(nameOf),
-      ['dlt_wrapper', 'geo_utils', 'map_engine', 'nds_reader', 'sqlite_wrap', 'ui_core']);
+      ['db_wrap', 'engine', 'log_wrapper', 'math_utils', 'render_core', 'store_reader']);
   } finally {
     vscodeStub.__clearConfig();
     provider.getChildren();
@@ -114,20 +114,20 @@ check('showTransitiveDependencies switches to the full closure', () => {
 });
 
 check('a chain node keeps following its own direction', () => {
-  const node = roots.find((n) => nameOf(n) === 'navi_app');
-  const mapEngine = provider.getChildren(node).find((c) => nameOf(c) === 'map_engine');
-  const next = provider.getChildren(mapEngine);
+  const node = roots.find((n) => nameOf(n) === 'sample_app');
+  const engineNode = provider.getChildren(node).find((c) => nameOf(c) === 'engine');
+  const next = provider.getChildren(engineNode);
   assert.deepStrictEqual(next.map((c) => c.direction + ':' + nameOf(c)),
-    ['forward:geo_utils', 'forward:nds_reader']);
+    ['forward:math_utils', 'forward:store_reader']);
 
-  const geoUtils = roots.find((n) => nameOf(n) === 'geo_utils');
-  const consumer = provider.getChildren(geoUtils).find((c) => nameOf(c) === 'map_engine');
+  const mathUtils = roots.find((n) => nameOf(n) === 'math_utils');
+  const consumer = provider.getChildren(mathUtils).find((c) => nameOf(c) === 'engine');
   assert.deepStrictEqual(provider.getChildren(consumer).map((c) => c.direction + ':' + nameOf(c)),
-    ['reverse:map_test', 'reverse:navi_app']);
+    ['reverse:engine_test', 'reverse:sample_app']);
 });
 
 check('direction is carried by a coloured arrow icon', () => {
-  const node = roots.find((n) => nameOf(n) === 'map_engine');
+  const node = roots.find((n) => nameOf(n) === 'engine');
   const [forward] = provider.getChildren(node);
   const reverse = provider.getChildren(node).find((c) => c.direction === 'reverse');
   const forwardItem = provider.getTreeItem(forward);
@@ -138,16 +138,16 @@ check('direction is carried by a coloured arrow icon', () => {
 });
 
 check('a chain node shows its type and how much further it goes', () => {
-  const node = roots.find((n) => nameOf(n) === 'navi_app');
-  const mapEngine = provider.getChildren(node).find((c) => nameOf(c) === 'map_engine');
-  assert.strictEqual(provider.getTreeItem(mapEngine).description, 'static   →2');
-  const dlt = provider.getChildren(node).find((c) => nameOf(c) === 'dlt_wrapper');
-  assert.strictEqual(provider.getTreeItem(dlt).description, 'static');
-  assert.strictEqual(provider.getTreeItem(dlt).collapsibleState, 0);
+  const node = roots.find((n) => nameOf(n) === 'sample_app');
+  const engineNode = provider.getChildren(node).find((c) => nameOf(c) === 'engine');
+  assert.strictEqual(provider.getTreeItem(engineNode).description, 'static   →2');
+  const logWrapper = provider.getChildren(node).find((c) => nameOf(c) === 'log_wrapper');
+  assert.strictEqual(provider.getTreeItem(logWrapper).description, 'static');
+  assert.strictEqual(provider.getTreeItem(logWrapper).collapsibleState, 0);
 });
 
 check('external libraries sit in one bucket at the end', () => {
-  const node = roots.find((n) => nameOf(n) === 'navi_app');
+  const node = roots.find((n) => nameOf(n) === 'sample_app');
   const children = provider.getChildren(node);
   const last = children[children.length - 1];
   assert.strictEqual(last.kind, 'external');
@@ -155,18 +155,18 @@ check('external libraries sit in one bucket at the end', () => {
   assert.strictEqual(item.label, 'external');
   assert.strictEqual(item.description, '3');
   assert.deepStrictEqual(provider.getChildren(last).map((c) => c.name),
-    ['-lsqlite3', '-ldlt', '-lpthread']);
+    ['-lsqlite3', '-lz', '-lpthread']);
 });
 
 check('a root target icon reflects its type', () => {
   const byName = new Map(roots.map((n) => [nameOf(n), provider.getTreeItem(n)]));
-  assert.strictEqual(byName.get('navi_app').iconPath.id, 'rocket');
-  assert.strictEqual(byName.get('map_engine').iconPath.id, 'package');
-  assert.strictEqual(byName.get('ui_core').iconPath.id, 'library');
+  assert.strictEqual(byName.get('sample_app').iconPath.id, 'rocket');
+  assert.strictEqual(byName.get('engine').iconPath.id, 'package');
+  assert.strictEqual(byName.get('render_core').iconPath.id, 'library');
 });
 
 check('the tooltip spells out both directions and the transitive count', () => {
-  const node = roots.find((n) => nameOf(n) === 'navi_app');
+  const node = roots.find((n) => nameOf(n) === 'sample_app');
   const tooltip = provider.getTreeItem(node).tooltip.value;
   assert.ok(/links → 3/.test(tooltip), tooltip);
   assert.ok(/including transitive/.test(tooltip), tooltip);
@@ -178,7 +178,7 @@ check('tree item ids are unique', () => {
 });
 
 check('getParent walks back to the root node', () => {
-  const node = roots.find((n) => nameOf(n) === 'geo_utils');
+  const node = roots.find((n) => nameOf(n) === 'math_utils');
   const child = provider.getChildren(node)[0];
   assert.strictEqual(provider.getParent(child), node);
   assert.strictEqual(provider.getParent(node), undefined);

@@ -89,36 +89,36 @@ check('memory regions are read from the configuration table', () => {
 check('region usage counts only what is placed in that region', () => {
   const [flash, ram] = gnu.regions;
   // .text 0xc1a + .rodata 0x279; .data lives at a RAM address, .ARM is non-alloc.
-  assert.strictEqual(flash.used, 3098 + 633);
+  assert.strictEqual(flash.used, 3098 + 625);
   assert.strictEqual(ram.used, 18432 + 4);
 });
 
 check('output section sizes match the map', () => {
   const byName = new Map(gnu.outputSections.map((s) => [s.name, s.size]));
   assert.strictEqual(byName.get('.text'), 0xc1a);
-  assert.strictEqual(byName.get('.rodata'), 0x279);
+  assert.strictEqual(byName.get('.rodata'), 625);
 });
 
 check('section names that wrap onto the next line are still parsed', () => {
-  // ".text.map_engine_load" is too long for the name column, so GNU ld puts the
+  // ".text.engine_load" is too long for the name column, so GNU ld puts the
   // address and size on the following line.
-  const wrapped = gnu.entries.find((e) => e.section === '.text.map_engine_load');
+  const wrapped = gnu.entries.find((e) => e.section === '.text.engine_load');
   assert.ok(wrapped, 'the wrapped section was not parsed at all');
   assert.strictEqual(wrapped.size, 0x38a);
-  assert.strictEqual(wrapped.object, 'map_engine.o');
+  assert.strictEqual(wrapped.object, 'engine.o');
 });
 
 check('archive members are split from their archive', () => {
-  const entry = gnu.entries.find((e) => e.section === '.text.nds_open');
-  assert.strictEqual(entry.archive, 'libnavicore.a');
-  assert.strictEqual(entry.object, 'nds_reader.o');
-  assert.strictEqual(entry.key, 'libnavicore.a(nds_reader.o)');
+  const entry = gnu.entries.find((e) => e.section === '.text.store_open');
+  assert.strictEqual(entry.archive, 'libdemocore.a');
+  assert.strictEqual(entry.object, 'store_reader.o');
+  assert.strictEqual(entry.key, 'libdemocore.a(store_reader.o)');
 });
 
 check('sizes aggregate per object file', () => {
   const objects = new Map([...gnu.totals.byObject].map(([k, v]) => [k, v.size]));
-  assert.strictEqual(objects.get('libnavicore.a(nds_reader.o)'), 17923);
-  assert.strictEqual(objects.get('app.o'), 2416);
+  assert.strictEqual(objects.get('libdemocore.a(store_reader.o)'), 17923);
+  assert.strictEqual(objects.get('app.o'), 2408);
   assert.strictEqual(objects.get('startup.o'), 175);
 });
 
@@ -126,33 +126,76 @@ check('sizes aggregate per section group', () => {
   const sections = Object.fromEntries(gnu.totals.bySection);
   assert.strictEqual(sections['.text'], 3098);
   assert.strictEqual(sections['.bss'], 18432);
-  assert.strictEqual(sections['.rodata'], 633);
+  assert.strictEqual(sections['.rodata'], 625);
   assert.strictEqual(sections['.data'], 4);
 });
 
 check('the total is the sum of every input section', () => {
   const sum = gnu.entries.reduce((total, e) => total + e.size, 0);
   assert.strictEqual(gnu.totals.total, sum);
-  assert.strictEqual(gnu.totals.total, 22352);
+  assert.strictEqual(gnu.totals.total, 22344);
 });
 
 check('archive members record why they were pulled in', () => {
   assert.deepStrictEqual(
     gnu.archiveReasons.map((r) => r.key + ' <- ' + r.requiredBy + ' (' + r.symbol + ')'),
-    ['libnavicore.a(geo_utils.o) <- app.o (geo_project)',
-     'libnavicore.a(nds_reader.o) <- app.o (nds_open)']);
+    ['libdemocore.a(math_utils.o) <- app.o (math_project)',
+     'libdemocore.a(store_reader.o) <- app.o (store_open)']);
+});
+
+check('an archive member whose requester wrapped is still parsed', () => {
+  // GNU ld pushes the requester onto the next line once the member name is too
+  // long for the column, which is the normal case as soon as the archive has a
+  // path in front of it:
+  //     libdemocore.a(store_reader.o)
+  //                                   app.o (store_open)
+  const wrapped = gnu.archiveReasons.find((r) => r.object === 'store_reader.o');
+  assert.ok(wrapped, 'the wrapped entry was dropped');
+  assert.strictEqual(wrapped.requiredBy, 'app.o');
+  assert.strictEqual(wrapped.symbol, 'store_open');
+});
+
+check('a wrapped requester is read even with a long archive path', () => {
+  const text = [
+    'Archive member included to satisfy reference by file (symbol)',
+    '',
+    '../../build/libs/reader/libvery_long_name.a(some_translation_unit.o)',
+    '                              main.o (open_thing)',
+    '',
+    'Memory Configuration',
+    ''
+  ].join('\n');
+  const model = mapFile.parse(text, 'synthetic');
+  assert.strictEqual(model.archiveReasons.length, 1);
+  assert.strictEqual(model.archiveReasons[0].object, 'some_translation_unit.o');
+  assert.strictEqual(model.archiveReasons[0].archive,
+                     '../../build/libs/reader/libvery_long_name.a');
+  assert.strictEqual(model.archiveReasons[0].requiredBy, 'main.o');
+  assert.strictEqual(model.archiveReasons[0].symbol, 'open_thing');
+});
+
+check('a stray member line with no requester is dropped, not half-recorded', () => {
+  const text = [
+    'Archive member included to satisfy reference by file (symbol)',
+    '',
+    'libfoo.a(bar.o)',
+    '',
+    'Memory Configuration',
+    ''
+  ].join('\n');
+  assert.deepStrictEqual(mapFile.parse(text, 'synthetic').archiveReasons, []);
 });
 
 check('an unreferenced archive member never enters the image', () => {
-  // unused.o is in libnavicore.a but nothing calls never_called.
+  // unused.o is in libdemocore.a but nothing calls never_called.
   assert.ok(![...gnu.totals.byObject.keys()].some((k) => k.indexOf('unused.o') !== -1));
 });
 
 check('symbols are attached to the section they sit in', () => {
-  const symbol = gnu.symbols.find((s) => s.name === 'nds_open');
-  assert.ok(symbol, 'nds_open was not parsed');
-  assert.strictEqual(symbol.section, '.text.nds_open');
-  assert.strictEqual(symbol.key, 'libnavicore.a(nds_reader.o)');
+  const symbol = gnu.symbols.find((s) => s.name === 'store_open');
+  assert.ok(symbol, 'store_open was not parsed');
+  assert.strictEqual(symbol.section, '.text.store_open');
+  assert.strictEqual(symbol.key, 'libdemocore.a(store_reader.o)');
   assert.strictEqual(symbol.address, 0x0800063c);
 });
 
@@ -166,14 +209,14 @@ check('--gc-sections output separates discarded sections', () => {
   assert.strictEqual(gnuGc.discarded.length, 20);
   assert.ok(gnuGc.totals.total < gnu.totals.total,
             'the garbage-collected image should be smaller');
-  const discarded = gnuGc.discarded.find((e) => e.section === '.bss.nds_tile_buffer');
+  const discarded = gnuGc.discarded.find((e) => e.section === '.bss.store_buffer');
   assert.ok(discarded, 'the dropped buffer is missing from the discarded list');
   assert.strictEqual(discarded.size, 0x4000);
 });
 
 check('discarded sections are excluded from the totals', () => {
   const keptSections = new Set(gnuGc.entries.map((e) => e.section));
-  assert.ok(!keptSections.has('.bss.nds_tile_buffer'));
+  assert.ok(!keptSections.has('.bss.store_buffer'));
   assert.strictEqual(gnuGc.totals.total, 3283);
 });
 
@@ -255,7 +298,7 @@ check('rows are sorted by how much they moved', () => {
 
 check('gc-sections shows up as removed objects and sections', () => {
   const d = mapFile.diff(gnu, gnuGc);
-  assert.strictEqual(d.total.delta, 3283 - 22352);
+  assert.strictEqual(d.total.delta, 3283 - 22344);
   const bss = d.sections.find((s) => s.name === '.bss');
   assert.ok(bss, '.bss should have changed');
   assert.strictEqual(bss.after, 0);
@@ -281,49 +324,49 @@ if (!fileApi.isBuildDir(sampleBuild)) {
   console.log('  (skipped: run ./test/bootstrap.sh to create test/sample-project/build)');
 } else {
   const targets = fileApi.loadModel(sampleBuild, '');
-  const naviMap = mapFile.parseFile(fixture('sample-navi_app'));
-  const joined = mapFile.matchTargets(targets, naviMap);
+  const sampleMap = mapFile.parseFile(fixture('sample-app'));
+  const joined = mapFile.matchTargets(targets, sampleMap);
   const byName = new Map(Array.from(targets.targets.values()).map((t) => [t.name, t]));
   const sizeOf = (name) => joined.get(byName.get(name).id);
 
   check('a static library is matched through its archive', () => {
-    const row = sizeOf('nds_reader');
-    assert.ok(row, 'nds_reader was not matched');
+    const row = sizeOf('store_reader');
+    assert.ok(row, 'store_reader was not matched');
     assert.strictEqual(row.objects.length, 1);
-    assert.ok(/libnds_reader\.a\(nds_reader\.cpp\.o\)$/.test(row.objects[0]), row.objects[0]);
+    assert.ok(/libstore_reader\.a\(store_reader\.cpp\.o\)$/.test(row.objects[0]), row.objects[0]);
     assert.ok(row.size > 500, 'expected a real size, got ' + row.size);
   });
 
   check("an executable is matched through CMake's object directory", () => {
-    const row = sizeOf('navi_app');
-    assert.ok(row, 'navi_app was not matched');
-    assert.ok(/navi_app\.dir\//.test(row.objects[0]), row.objects[0]);
+    const row = sizeOf('sample_app');
+    assert.ok(row, 'sample_app was not matched');
+    assert.ok(/sample_app\.dir\//.test(row.objects[0]), row.objects[0]);
   });
 
   check('a shared library is flagged as dynamic', () => {
-    const row = sizeOf('ui_core');
-    assert.ok(row, 'ui_core was not matched');
+    const row = sizeOf('render_core');
+    assert.ok(row, 'render_core was not matched');
     assert.strictEqual(row.dynamic, true);
   });
 
   check('static libraries are not flagged as dynamic', () => {
-    for (const name of ['nds_reader', 'sqlite_wrap', 'dlt_wrapper', 'map_engine']) {
+    for (const name of ['store_reader', 'db_wrap', 'log_wrapper', 'engine']) {
       assert.strictEqual(sizeOf(name).dynamic, false, name + ' should be static');
     }
   });
 
   check('a target absent from this image is simply not matched', () => {
-    // map_test and nds_test are separate executables, and geo_utils resolved out
-    // of libui_core.dylib rather than being pulled from its archive.
-    assert.strictEqual(sizeOf('map_test'), undefined);
-    assert.strictEqual(sizeOf('nds_test'), undefined);
-    assert.strictEqual(sizeOf('geo_utils'), undefined);
+    // engine_test and store_test are separate executables, and math_utils resolved out
+    // of librender_core.dylib rather than being pulled from its archive.
+    assert.strictEqual(sizeOf('engine_test'), undefined);
+    assert.strictEqual(sizeOf('store_test'), undefined);
+    assert.strictEqual(sizeOf('math_utils'), undefined);
   });
 
   check('matched sizes never exceed the image', () => {
     const total = [...joined.values()].reduce((sum, row) => sum + row.size, 0);
-    assert.ok(total <= naviMap.totals.total,
-              total + ' attributed but the image is only ' + naviMap.totals.total);
+    assert.ok(total <= sampleMap.totals.total,
+              total + ' attributed but the image is only ' + sampleMap.totals.total);
   });
 
   check('the tree shows the size next to the link counts', () => {
@@ -335,9 +378,9 @@ if (!fileApi.isBuildDir(sampleBuild)) {
     const roots = view.getChildren();
     const item = (name) =>
       view.getTreeItem(roots.find((n) => targets.targets.get(n.id).name === name));
-    assert.strictEqual(item('nds_reader').description, '→1 ←2   1.0 KB');
-    assert.strictEqual(item('ui_core').description, '→1 ←1   dynamic');
-    assert.strictEqual(item('geo_utils').description, '←2');
+    assert.strictEqual(item('store_reader').description, '→1 ←2   1.0 KB');
+    assert.strictEqual(item('render_core').description, '→1 ←1   dynamic');
+    assert.strictEqual(item('math_utils').description, '←2');
   });
 
   check('dropping the map removes the size column again', () => {
@@ -347,7 +390,7 @@ if (!fileApi.isBuildDir(sampleBuild)) {
     view.setSizes(joined);
     view.setSizes(null);
     const roots = view.getChildren();
-    const node = roots.find((n) => targets.targets.get(n.id).name === 'nds_reader');
+    const node = roots.find((n) => targets.targets.get(n.id).name === 'store_reader');
     assert.strictEqual(view.getTreeItem(node).description, '→1 ←2');
   });
 
@@ -360,9 +403,9 @@ if (!fileApi.isBuildDir(sampleBuild)) {
     stub.__setConfig('sortTargets', 'size');
     try {
       const names = view.getChildren().map((n) => targets.targets.get(n.id).name);
-      assert.strictEqual(names[0], 'nds_reader');
+      assert.strictEqual(names[0], 'store_reader');
       // Unmatched targets sort last rather than pretending to be zero bytes.
-      assert.ok(names.indexOf('geo_utils') > names.indexOf('dlt_wrapper'));
+      assert.ok(names.indexOf('math_utils') > names.indexOf('log_wrapper'));
     } finally {
       stub.__clearConfig();
     }
@@ -397,9 +440,9 @@ check('discarded sections get their own group when present', () => {
 check('objects are listed largest first with a percentage', () => {
   const group = provider.getChildren().find((n) => n.group === 'objects');
   const nodes = provider.getChildren(group);
-  assert.strictEqual(nodes[0].object.key, 'libnavicore.a(nds_reader.o)');
+  assert.strictEqual(nodes[0].object.key, 'libdemocore.a(store_reader.o)');
   const item = provider.getTreeItem(nodes[0]);
-  assert.strictEqual(item.label, 'nds_reader.o  (libnavicore.a)');
+  assert.strictEqual(item.label, 'store_reader.o  (libdemocore.a)');
   assert.ok(/^17\.5 KB/.test(item.description), 'description was ' + item.description);
   assert.ok(/%/.test(item.description));
 });
@@ -421,8 +464,8 @@ check('memory regions render usage against capacity', () => {
 check('archive reasons explain the pull-in', () => {
   const group = provider.getChildren().find((n) => n.group === 'archives');
   const item = provider.getTreeItem(provider.getChildren(group)[0]);
-  assert.strictEqual(item.label, 'geo_utils.o');
-  assert.ok(/app\.o/.test(item.description) && /geo_project/.test(item.description),
+  assert.strictEqual(item.label, 'math_utils.o');
+  assert.ok(/app\.o/.test(item.description) && /math_project/.test(item.description),
             'description was ' + item.description);
 });
 

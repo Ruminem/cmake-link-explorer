@@ -224,7 +224,7 @@ function loadModel(buildDir, wantedConfiguration) {
       name: target.name,
       type: target.type,
       nameOnDisk: target.nameOnDisk || null,
-      // Relative to the source root, e.g. "libs/map_engine".
+      // Relative to the source root, e.g. "libs/engine".
       sourceDir: (target.paths && target.paths.source) || '',
       dependencyIds: (target.dependencies || []).map((d) => d.id),
       linkFragments: linkLibraryFragments(target),

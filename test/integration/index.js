@@ -110,50 +110,50 @@ async function runChecks() {
   log('');
 
   await check('all sample-project targets are present', () => {
-    const expected = ['dlt_wrapper', 'geo_utils', 'map_engine', 'map_test',
-                      'navi_app', 'nds_reader', 'nds_test', 'sqlite_wrap', 'ui_core'];
+    const expected = ['db_wrap', 'engine', 'engine_test', 'log_wrapper', 'math_utils',
+                        'render_core', 'sample_app', 'store_reader', 'store_test'];
     const actual = Array.from(byName.keys()).filter((n) => expected.indexOf(n) !== -1).sort();
     assert.deepStrictEqual(actual, expected);
   });
 
   await check('direct dependencies match what the CMakeLists declares', () => {
-    // app/CMakeLists.txt: target_link_libraries(navi_app PRIVATE map_engine ui_core dlt_wrapper)
-    assert.deepStrictEqual(namesOf(byName.get('navi_app').directDependencyIds),
-                           ['dlt_wrapper', 'map_engine', 'ui_core']);
-    // libs/map_engine/CMakeLists.txt: target_link_libraries(map_engine PUBLIC nds_reader geo_utils)
-    assert.deepStrictEqual(namesOf(byName.get('map_engine').directDependencyIds),
-                           ['geo_utils', 'nds_reader']);
+    // app/CMakeLists.txt: target_link_libraries(sample_app PRIVATE engine render_core log_wrapper)
+    assert.deepStrictEqual(namesOf(byName.get('sample_app').directDependencyIds),
+                           ['engine', 'log_wrapper', 'render_core']);
+    // libs/engine/CMakeLists.txt: target_link_libraries(engine PUBLIC store_reader math_utils)
+    assert.deepStrictEqual(namesOf(byName.get('engine').directDependencyIds),
+                           ['math_utils', 'store_reader']);
   });
 
   await check('CMake reports the transitive closure that the view reduces away', () => {
-    assert.deepStrictEqual(namesOf(byName.get('navi_app').dependencyIds),
-                           ['dlt_wrapper', 'geo_utils', 'map_engine', 'nds_reader', 'sqlite_wrap', 'ui_core']);
+    assert.deepStrictEqual(namesOf(byName.get('sample_app').dependencyIds),
+                           ['db_wrap', 'engine', 'log_wrapper', 'math_utils', 'render_core', 'store_reader']);
   });
 
   await check('the tree shows only the direct dependencies', () => {
     const roots = provider.getChildren();
-    const node = roots.find((n) => model.targets.get(n.id).name === 'navi_app');
+    const node = roots.find((n) => model.targets.get(n.id).name === 'sample_app');
     const shown = provider.getChildren(node)
       .filter((n) => n.direction === 'forward')
       .map((n) => model.targets.get(n.id).name).sort();
-    assert.deepStrictEqual(shown, ['dlt_wrapper', 'map_engine', 'ui_core']);
+    assert.deepStrictEqual(shown, ['engine', 'log_wrapper', 'render_core']);
   });
 
   await check('the path trace walks one hop at a time', () => {
     const fileApi = require('../../src/fileApi');
-    const ids = fileApi.findLinkPath(model, byName.get('navi_app').id, byName.get('sqlite_wrap').id);
+    const ids = fileApi.findLinkPath(model, byName.get('sample_app').id, byName.get('db_wrap').id);
     assert.deepStrictEqual(ids.map(nameOf),
-                           ['navi_app', 'map_engine', 'nds_reader', 'sqlite_wrap']);
+                           ['sample_app', 'engine', 'store_reader', 'db_wrap']);
   });
 
   await check('reverse dependencies are derived correctly', () => {
-    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('geo_utils').id)),
-                           ['map_engine', 'ui_core']);
+    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('math_utils').id)),
+                           ['engine', 'render_core']);
   });
 
   await check('transitive PUBLIC linkage is visible', () => {
-    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('nds_reader').id)),
-                           ['map_engine', 'nds_test']);
+    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('store_reader').id)),
+                           ['engine', 'store_test']);
   });
 
   await check('no project-built library is reported as external', () => {
@@ -180,15 +180,15 @@ async function runChecks() {
     const roots = provider.getChildren();
     assert.ok(roots.length > 0, 'tree produced no root nodes');
     const names = roots.map((n) => model.targets.get(n.id).name);
-    assert.ok(names.indexOf('navi_app') !== -1, 'navi_app missing from tree roots');
+    assert.ok(names.indexOf('sample_app') !== -1, 'sample_app missing from tree roots');
     assert.ok(names.indexOf('generate_docs') === -1, 'UTILITY target leaked into the tree');
   });
 
   await check('a real TreeItem is produced for a target', () => {
     const roots = provider.getChildren();
-    const node = roots.find((n) => model.targets.get(n.id).name === 'geo_utils');
+    const node = roots.find((n) => model.targets.get(n.id).name === 'math_utils');
     const item = provider.getTreeItem(node);
-    assert.strictEqual(item.label, 'geo_utils');
+    assert.strictEqual(item.label, 'math_utils');
     assert.strictEqual(item.description, '←2');
     assert.strictEqual(item.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
     assert.ok(item.iconPath instanceof vscode.ThemeIcon, 'icon is not a ThemeIcon');
@@ -197,25 +197,25 @@ async function runChecks() {
 
   await check('both directions are counted on the row itself', () => {
     const roots = provider.getChildren();
-    const node = roots.find((n) => model.targets.get(n.id).name === 'map_engine');
+    const node = roots.find((n) => model.targets.get(n.id).name === 'engine');
     assert.strictEqual(provider.getTreeItem(node).description, '→2 ←2');
 
     const children = provider.getChildren(node);
     assert.deepStrictEqual(
       children.map((c) => c.direction + ':' + model.targets.get(c.id).name),
-      ['forward:geo_utils', 'forward:nds_reader', 'reverse:map_test', 'reverse:navi_app']);
+      ['forward:math_utils', 'forward:store_reader', 'reverse:engine_test', 'reverse:sample_app']);
   });
 
   await check('executables sort ahead of the libraries everything leans on', () => {
     const names = provider.getChildren().map((n) => model.targets.get(n.id).name);
-    assert.deepStrictEqual(names.slice(0, 3), ['map_test', 'navi_app', 'nds_test']);
-    assert.ok(names.indexOf('geo_utils') < names.indexOf('dlt_wrapper'),
-              'geo_utils has more dependents and should sort higher');
+    assert.deepStrictEqual(names.slice(0, 3), ['engine_test', 'sample_app', 'store_test']);
+    assert.ok(names.indexOf('math_utils') < names.indexOf('log_wrapper'),
+              'math_utils has more dependents and should sort higher');
   });
 
   await check('direction arrows are real coloured ThemeIcons', () => {
     const roots = provider.getChildren();
-    const node = roots.find((n) => model.targets.get(n.id).name === 'map_engine');
+    const node = roots.find((n) => model.targets.get(n.id).name === 'engine');
     const children = provider.getChildren(node);
     const forward = provider.getTreeItem(children[0]);
     const reverse = provider.getTreeItem(children.find((c) => c.direction === 'reverse'));
@@ -227,15 +227,15 @@ async function runChecks() {
 
   await check('openCMakeLists jumps to the add_library line', async () => {
     const roots = provider.getChildren();
-    const node = roots.find((n) => model.targets.get(n.id).name === 'map_engine');
+    const node = roots.find((n) => model.targets.get(n.id).name === 'engine');
     await vscode.commands.executeCommand('cmakeLinkExplorer.openCMakeLists', node);
 
     const editor = vscode.window.activeTextEditor;
     assert.ok(editor, 'no editor was opened');
-    assert.ok(editor.document.fileName.endsWith(path.join('map_engine', 'CMakeLists.txt')),
+    assert.ok(editor.document.fileName.endsWith(path.join('engine', 'CMakeLists.txt')),
               'opened the wrong file: ' + editor.document.fileName);
     const line = editor.document.lineAt(editor.selection.active.line).text;
-    assert.ok(/add_library\s*\(\s*map_engine\b/.test(line),
+    assert.ok(/add_library\s*\(\s*engine\b/.test(line),
               'cursor landed on: ' + JSON.stringify(line));
   });
 
@@ -246,31 +246,31 @@ async function runChecks() {
 
   await check('copyName puts the target name on the clipboard', async () => {
     const roots = provider.getChildren();
-    const node = roots.find((n) => model.targets.get(n.id).name === 'sqlite_wrap');
+    const node = roots.find((n) => model.targets.get(n.id).name === 'db_wrap');
     await vscode.commands.executeCommand('cmakeLinkExplorer.copyName', node);
-    assert.strictEqual(await vscode.env.clipboard.readText(), 'sqlite_wrap');
+    assert.strictEqual(await vscode.env.clipboard.readText(), 'db_wrap');
   });
 
   // ------------------------------------------------- include -> link resolving
 
   await check('an include that already works is reported as linked', () => {
     const result = api.resolveInclude(
-      path.join(workspace, 'app', 'navi_app.cpp'), 'map_engine.h');
+      path.join(workspace, 'app', 'sample_app.cpp'), 'engine.h');
     assert.strictEqual(result.status, 'already-linked');
-    assert.strictEqual(result.provider.name, 'map_engine');
+    assert.strictEqual(result.provider.name, 'engine');
   });
 
   await check('an include that only works transitively is flagged', () => {
     const result = api.resolveInclude(
-      path.join(workspace, 'app', 'navi_app.cpp'), 'geo_utils.h');
+      path.join(workspace, 'app', 'sample_app.cpp'), 'math_utils.h');
     assert.strictEqual(result.status, 'transitive');
   });
 
   await check('a missing link produces the exact CMake line', () => {
     const result = api.resolveInclude(
-      path.join(workspace, 'tests', 'nds_test.cpp'), 'dlt_wrapper.h');
+      path.join(workspace, 'tests', 'store_test.cpp'), 'log_wrapper.h');
     assert.strictEqual(result.status, 'needs-link');
-    assert.strictEqual(result.suggestion, 'target_link_libraries(nds_test PRIVATE dlt_wrapper)');
+    assert.strictEqual(result.suggestion, 'target_link_libraries(store_test PRIVATE log_wrapper)');
 
     const plan = api.planLinkEdit(result.from, result.provider.name);
     assert.strictEqual(plan.kind, 'append');
@@ -281,7 +281,7 @@ async function runChecks() {
   // line itself, which means going through VS Code's real code action pipeline.
   const probe = path.join(workspace, 'tests', '_probe_generated.cpp');
   try {
-    fs.writeFileSync(probe, '#include "dlt_wrapper.h"\nint probe() { return 0; }\n');
+    fs.writeFileSync(probe, '#include "log_wrapper.h"\nint probe() { return 0; }\n');
     const uri = vscode.Uri.file(probe);
     const document = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(document, { preview: true });
@@ -292,7 +292,7 @@ async function runChecks() {
       const ours = (actions || []).filter(
         (a) => a.command && a.command.command === 'cmakeLinkExplorer.applyLinkForInclude');
       assert.strictEqual(ours.length, 1, 'expected one quick fix, got ' + ours.length);
-      assert.ok(/dlt_wrapper/.test(ours[0].title), 'title was ' + ours[0].title);
+      assert.ok(/log_wrapper/.test(ours[0].title), 'title was ' + ours[0].title);
       assert.strictEqual(ours[0].kind.value, vscode.CodeActionKind.QuickFix.value);
     });
 
@@ -316,7 +316,7 @@ async function runChecks() {
   await check('a GNU ld map loads through the extension', () => {
     const model = api.loadMap(path.join(maps, 'gnu-ld-full.map'));
     assert.strictEqual(model.format, 'gnu-ld');
-    assert.strictEqual(model.totals.total, 22352);
+    assert.strictEqual(model.totals.total, 22344);
     assert.strictEqual(model.regions.length, 2);
   });
 
@@ -332,7 +332,7 @@ async function runChecks() {
 
     const biggest = mapProvider.getChildren(objects)[0];
     const objectItem = mapProvider.getTreeItem(biggest);
-    assert.strictEqual(objectItem.label, 'nds_reader.o  (libnavicore.a)');
+    assert.strictEqual(objectItem.label, 'store_reader.o  (libdemocore.a)');
     assert.ok(objectItem.tooltip instanceof vscode.MarkdownString, 'tooltip is not a MarkdownString');
   });
 
@@ -363,20 +363,20 @@ async function runChecks() {
   });
 
   await check('a loaded map gives every CMake target its share of the image', () => {
-    api.loadMap(path.join(maps, 'sample-navi_app.map'));
+    api.loadMap(path.join(maps, 'sample-app.map'));
     const sizes = api.getSizes();
     assert.ok(sizes, 'no sizes were attached to the targets');
 
     const byName = new Map(Array.from(model.targets.values()).map((t) => [t.name, t]));
-    const ndsReader = sizes.get(byName.get('nds_reader').id);
-    assert.ok(ndsReader && ndsReader.size > 500, 'nds_reader has no size');
-    assert.strictEqual(sizes.get(byName.get('ui_core').id).dynamic, true);
+    const storeReader = sizes.get(byName.get('store_reader').id);
+    assert.ok(storeReader && storeReader.size > 500, 'store_reader has no size');
+    assert.strictEqual(sizes.get(byName.get('render_core').id).dynamic, true);
 
     const roots = provider.getChildren();
     const item = (name) =>
       provider.getTreeItem(roots.find((n) => model.targets.get(n.id).name === name));
-    assert.strictEqual(item('nds_reader').description, '→1 ←2   1.0 KB');
-    assert.strictEqual(item('ui_core').description, '→1 ←1   dynamic');
+    assert.strictEqual(item('store_reader').description, '→1 ←2   1.0 KB');
+    assert.strictEqual(item('render_core').description, '→1 ←1   dynamic');
   });
 
   await check('comparing two maps drops the size column', () => {

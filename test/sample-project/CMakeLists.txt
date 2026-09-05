@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.14)
-project(NaviDemo CXX)
+project(SampleProject CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_subdirectory(libs/geo_utils)
-add_subdirectory(libs/sqlite_wrap)
-add_subdirectory(libs/dlt_wrapper)
-add_subdirectory(libs/nds_reader)
-add_subdirectory(libs/map_engine)
-add_subdirectory(libs/ui_core)
+add_subdirectory(libs/math_utils)
+add_subdirectory(libs/db_wrap)
+add_subdirectory(libs/log_wrapper)
+add_subdirectory(libs/store_reader)
+add_subdirectory(libs/engine)
+add_subdirectory(libs/render_core)
 add_subdirectory(app)
 add_subdirectory(tests)
 

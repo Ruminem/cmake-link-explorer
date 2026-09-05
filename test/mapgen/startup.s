@@ -4,7 +4,7 @@
     .global Reset_Handler
 Reset_Handler:
     bl  app_init
-    bl  map_engine_load
+    bl  engine_load
     b   .
     .size Reset_Handler, .-Reset_Handler
 

@@ -68,6 +68,7 @@ function parseGnuLd(text, filePath) {
 
   let mode = 'preamble';
   let pendingSection = null; // a section name whose address/size wrapped to the next line
+  let pendingMember = null;  // an archive member whose requester wrapped to the next line
 
   const outputSectionRe = new RegExp('^(\\.[^\\s]+)\\s+(' + HEX + ')\\s+(' + HEX + ')');
   const inputSectionRe = new RegExp('^ (\\.[^\\s]+)\\s+(' + HEX + ')\\s+(' + HEX + ')\\s+(.+)$');
@@ -77,6 +78,10 @@ function parseGnuLd(text, filePath) {
   const fillRe = new RegExp('^ \\*fill\\*\\s+(' + HEX + ')\\s+(' + HEX + ')');
   const regionRe = new RegExp('^(\\S+)\\s+(' + HEX + ')\\s+(' + HEX + ')\\s*(\\S*)$');
   const archiveReasonRe = /^(\S+)\s+(\S+)\s+\((\S+)\)\s*$/;
+  // Long member names push the requester onto the next line, which is the norm
+  // once the archive has any path in front of it.
+  const archiveMemberOnlyRe = /^(\S+\([^)]*\))\s*$/;
+  const archiveRequesterRe = /^\s+(\S+)\s+\((\S+)\)\s*$/;
 
   const addEntry = (section, address, size, origin, discarded) => {
     const parsed = splitOrigin(origin);
@@ -98,23 +103,44 @@ function parseGnuLd(text, filePath) {
 
     if (/^Archive member included/.test(line)) { mode = 'archive'; continue; }
     if (/^Allocating common symbols/.test(line)) { mode = 'common'; continue; }
-    if (/^Discarded input sections/.test(line)) { mode = 'discarded'; pendingSection = null; continue; }
-    if (/^Memory Configuration/.test(line)) { mode = 'memory'; continue; }
+    if (/^Discarded input sections/.test(line)) {
+      mode = 'discarded'; pendingSection = null; pendingMember = null; continue;
+    }
+    if (/^Memory Configuration/.test(line)) { mode = 'memory'; pendingMember = null; continue; }
     if (/^Linker script and memory map/.test(line)) { mode = 'map'; pendingSection = null; continue; }
-    if (/^(Merging object attributes|Cross Reference Table)/.test(line)) { mode = 'other'; continue; }
+    if (/^(Merging object attributes|Cross Reference Table)/.test(line)) {
+      mode = 'other'; pendingMember = null; continue;
+    }
 
     if (mode === 'archive') {
-      const match = archiveReasonRe.exec(line);
-      if (match) {
-        const origin = splitOrigin(match[1]);
+      const addReason = (member, requiredBy, symbol) => {
+        const origin = splitOrigin(member);
         model.archiveReasons.push({
           key: originKey(origin),
           object: origin.object,
           archive: origin.archive,
-          requiredBy: match[2],
-          symbol: match[3]
+          requiredBy: requiredBy,
+          symbol: symbol
         });
+      };
+
+      if (pendingMember) {
+        const wrapped = archiveRequesterRe.exec(line);
+        if (wrapped) {
+          addReason(pendingMember, wrapped[1], wrapped[2]);
+          pendingMember = null;
+          continue;
+        }
+        pendingMember = null;
       }
+
+      const match = archiveReasonRe.exec(line);
+      if (match) {
+        addReason(match[1], match[2], match[3]);
+        continue;
+      }
+      const memberOnly = archiveMemberOnlyRe.exec(line);
+      if (memberOnly) pendingMember = memberOnly[1];
       continue;
     }
 
@@ -384,8 +410,8 @@ function findMapFiles(root, maxDepth) {
  * Works out how much of the linked image each CMake target accounts for.
  *
  * The two halves of this extension describe the same thing from different
- * sides: CMake knows target "map_engine" produces libmap_engine.a, and the map
- * file knows libmap_engine.a(map_engine.cpp.o) takes 17.5 KB. Three things let
+ * sides: CMake knows target "engine" produces libengine.a, and the map
+ * file knows libengine.a(engine.cpp.o) takes 17.5 KB. Three things let
  * them be matched up:
  *
  *   1. an archive named after the target's nameOnDisk

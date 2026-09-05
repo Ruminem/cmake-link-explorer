@@ -13,18 +13,18 @@ mkdir -p ../maps
 
 if command -v arm-none-eabi-as > /dev/null 2>&1; then
   echo "GNU ld (arm-none-eabi)"
-  for f in startup app map_engine geo_utils nds_reader unused; do
+  for f in startup app engine math_utils store_reader unused; do
     arm-none-eabi-as -mcpu=cortex-m4 -o "$f.o" "$f.s"
   done
-  arm-none-eabi-ar rcs libnavicore.a geo_utils.o nds_reader.o unused.o
+  arm-none-eabi-ar rcs libdemocore.a math_utils.o store_reader.o unused.o
 
   # Everything kept: the full picture, including sections nothing references.
-  arm-none-eabi-ld -T link.ld -Map=../maps/gnu-ld-full.map -o navicore.elf \
-    startup.o app.o map_engine.o libnavicore.a 2> /dev/null || true
+  arm-none-eabi-ld -T link.ld -Map=../maps/gnu-ld-full.map -o democore.elf \
+    startup.o app.o engine.o libdemocore.a 2> /dev/null || true
 
   # With --gc-sections: smaller, and the pair makes a real diff to test against.
-  arm-none-eabi-ld -T link.ld --gc-sections -Map=../maps/gnu-ld-gc.map -o navicore-gc.elf \
-    startup.o app.o map_engine.o libnavicore.a 2> /dev/null || true
+  arm-none-eabi-ld -T link.ld --gc-sections -Map=../maps/gnu-ld-gc.map -o democore-gc.elf \
+    startup.o app.o engine.o libdemocore.a 2> /dev/null || true
 
   rm -f ./*.o ./*.a ./*.elf
 else

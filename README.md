@@ -53,14 +53,14 @@ code --list-extensions | grep cmake-link
 `#include` 줄에 커서를 두면 **전구(Quick Fix)** 가 뜬다.
 
 ```cpp
-#include "dlt_wrapper.h"     💡 Link dlt_wrapper from nds_test
+#include "log_wrapper.h"     💡 Link log_wrapper from store_test
 ```
 
 누르면 알맞은 `CMakeLists.txt`를 찾아 고친다.
 
 ```cmake
-target_link_libraries(nds_test PRIVATE nds_reader dlt_wrapper)
-                                                  ^^^^^^^^^^^ 추가됨
+target_link_libraries(store_test PRIVATE store_reader log_wrapper)
+                                                      ^^^^^^^^^^^ 추가됨
 ```
 
 기존 `target_link_libraries` 호출이 있으면 거기에 붙이고, 없으면
@@ -109,17 +109,17 @@ target_link_libraries(nds_test PRIVATE nds_reader dlt_wrapper)
 # Targets
 
 ```
-TARGETS                     실행 파일이 먼저, 그다음 의존받는 순
-🚀 navi_app          →3
-📦 map_engine        →2 ←2      ← 펼치지 않아도 허브라는 게 보인다
-📦 geo_utils            ←2      ← 아무것도 링크 안 하는 말단
-📦 sqlite_wrap          ←1
+TARGETS                            실행 파일이 먼저, 그다음 의존받는 순
+🚀 sample_app     →3
+📦 engine         →2 ←2            펼치지 않아도 허브라는 게 보인다
+📦 math_utils        ←2            아무것도 링크 안 하는 말단
+📦 db_wrap           ←1
 
-▾ 📦 map_engine      →2 ←2
-     → geo_utils     static           파랑 화살표 = 얘가 링크하는 것
-     → nds_reader    static   →1
-     ← map_test      exe              주황 화살표 = 얘를 링크하는 것
-     ← navi_app      exe
+▾ 📦 engine       →2 ←2
+     → math_utils      static      파랑 화살표 = 얘가 링크하는 것
+     → store_reader    static  →1
+     ← engine_test     exe         주황 화살표 = 얘를 링크하는 것
+     ← sample_app      exe
 ```
 
 행 하나에 양방향 개수가 다 들어 있다.
@@ -137,22 +137,24 @@ Linker Map 탭에서 맵 파일을 열면, 같은 행에 **그 타겟이 바이�
 크기**가 함께 나온다.
 
 ```
-🚀 navi_app          →3        112 B
-📦 nds_reader        →1 ←2     1.0 KB
-📦 sqlite_wrap          ←1      277 B
-📦 geo_utils            ←2              ← 이 이미지에 없음
-📚 ui_core           →1 ←1     dynamic
+🚀 sample_app     →3        111 B
+📦 engine         →2 ←2      44 B
+📦 store_reader   →1 ←2     1.0 KB
+📦 db_wrap           ←1      277 B
+📦 log_wrapper       ←1       49 B
+📦 math_utils        ←2               이 이미지에 없음
+📚 render_core    →1 ←1     dynamic
 ```
 
-CMake가 알려주는 `nameOnDisk`(`libnds_reader.a`)를 맵 파일의 이름과 맞춘다.
+CMake가 알려주는 `nameOnDisk`(`libstore_reader.a`)를 맵 파일의 이름과 맞춘다.
 실행 파일은 CMake가 오브젝트를 `<타겟>.dir/`에 넣는 규칙으로 찾는다.
 
 그래서 두 질문을 한 줄에서 같이 볼 수 있다.
 
-- `nds_reader` — **2개만 쓰는데 1.0 KB**. 정리 후보
-- `geo_utils` — **2개가 쓰는데 이미지에 없다.** `ui_core`가 셰어드 라이브러리라
+- `store_reader` — **2개만 쓰는데 1.0 KB**. 정리 후보
+- `math_utils` — **2개가 쓰는데 이미지에 없다.** `render_core`가 셰어드 라이브러리라
   거기서 심볼이 해결된 것. 이런 건 맵을 직접 읽지 않으면 모른다
-- `ui_core` — 동적 링크라 이미지에 없다. 임포트 스텁 몇십 바이트를 크기로
+- `render_core` — 동적 링크라 이미지에 없다. 임포트 스텁 몇십 바이트를 크기로
   표시하면 자릿수가 틀리므로 `dynamic`이라고만 쓴다
 
 `sortTargets`를 `size`로 두면 **"쓰는 곳은 적은데 무거운 것"**을 위에서부터
@@ -206,19 +208,19 @@ File API의 `dependencies`는 **빌드 순서 기준 전이적 폐포**다. 실�
 # Linker Map
 
 ```
-LINKER MAP  navicore.map          gnu-ld · 21.8 KB
+LINKER MAP  democore.map          gnu-ld · 21.8 KB
 ├── memory regions
 │   ├── FLASH        3.6 KB / 512.0 KB    0.71%
 │   └── RAM         18.0 KB / 128.0 KB     14.1%
 ├── by object                              21.8 KB total
-│   ├── nds_reader.o  (libnavicore.a)     17.5 KB   80.2%
+│   ├── store_reader.o  (libdemocore.a)   17.5 KB   80.2%
 │   │   ├── .bss                          16.0 KB   91.5%
 │   │   └── .text                          1.5 KB    8.4%
 │   └── app.o                              2.4 KB   10.8%
 ├── by section
 ├── largest symbols
 └── why archive members were pulled in
-    └── geo_utils.o        ← app.o  (geo_project)
+    └── math_utils.o        ← app.o  (math_project)
 ```
 
 ## 지원 포맷
@@ -237,7 +239,7 @@ lld는 일부러 넣지 않았다. 실물 샘플 없이 포맷을 추측해서 �
 ## GNU ld 파싱에서 신경 쓴 것
 
 - **줄바꿈된 섹션 이름** — 이름이 길면 GNU ld가 주소/크기를 다음 줄로 넘긴다.
-  `.text.map_engine_load` 같은 게 전부 여기 해당해서, 이걸 놓치면 실제 임베디드
+  `.text.engine_load` 같은 게 전부 여기 해당해서, 이걸 놓치면 실제 임베디드
   맵의 상당 부분이 통째로 누락된다
 - **아카이브 멤버** — `libfoo.a(bar.o)`를 아카이브와 오브젝트로 분리
 - **`Archive member included` 표** — 각 아카이브 멤버가 **왜** 들어왔는지
@@ -338,7 +340,7 @@ cat /tmp/it.log
 | `test/sample-project` (실제 CMake 4.4) | 17 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 15 checks |
-| 맵 파서 + 맵 트리 + 타겟 조인 | 46 checks |
+| 맵 파서 + 맵 트리 + 타겟 조인 | 49 checks |
 | include → 링크 해결 + CMakeLists 편집 | 28 checks |
 | VS Code 확장 호스트 (1.136) | 35 checks |
 

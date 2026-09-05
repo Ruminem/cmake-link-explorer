@@ -1,0 +1,81 @@
+# Path: sample_app
+# Arch: arm64
+# Object files:
+[  0] linker synthesized
+[  1] CMakeFiles/sample_app.dir/sample_app.cpp.o
+[  2] ../libs/engine/libengine.a(engine.cpp.o)
+[  3] ../libs/render_core/librender_core.dylib
+[  4] ../libs/log_wrapper/liblog_wrapper.a(log_wrapper.cpp.o)
+[  5] ../libs/store_reader/libstore_reader.a(store_reader.cpp.o)
+[  6] ../libs/db_wrap/libdb_wrap.a(db_wrap.cpp.o)
+[  7] /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libc++.tbd
+[  8] /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/libSystem.tbd
+[  9] /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/system/libsystem_c.tbd
+[ 10] /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/lib/system/libunwind.tbd
+# Sections:
+# Address	Size    	Segment	Section
+0x100001218	0x00000578	__TEXT	__text
+0x100001790	0x0000009C	__TEXT	__stubs
+0x10000182C	0x00000004	__TEXT	__init_offsets
+0x100001830	0x00000034	__TEXT	__cstring
+0x100001864	0x00000020	__TEXT	__gcc_except_tab
+0x100001884	0x00000098	__TEXT	__unwind_info
+0x100004000	0x00000088	__DATA_CONST	__got
+0x100008000	0x00000018	__DATA	__bss
+# Symbols:
+# Address	Size    	File  Name
+0x100000000	0x00000000	[  0] __mh_execute_header
+0x100000000	0x00000000	[  0] ___dso_handle
+0x100001218	0x00000058	[  1] _main
+0x100001270	0x0000002C	[  2] __ZN6engine4LoadEPKc
+0x10000129C	0x00000028	[  4] __ZN11log_wrapper3LogEPKcS1_
+0x1000012C4	0x00000034	[  5] __ZNSt3__16vectorIiNS_9allocatorIiEEED1B9nqe210106Ev
+0x1000012F8	0x00000044	[  5] __ZN12store_reader12OpenDatabaseEPKc
+0x10000133C	0x000002B0	[  5] __ZNSt3__16vectorIiNS_9allocatorIiEEE6assignEmRKi
+0x1000015EC	0x00000014	[  5] __ZNSt3__16vectorIiNS_9allocatorIiEEE20__throw_length_errorB9nqe210106Ev
+0x100001600	0x00000050	[  5] __ZNSt3__120__throw_length_errorB9nqe210106EPKc
+0x100001650	0x00000024	[  5] __ZNSt12length_errorC1B9nqe210106EPKc
+0x100001674	0x00000024	[  5] __GLOBAL__sub_I_store_reader.cpp
+0x100001698	0x000000E4	[  6] __ZN7db_wrap4OpenEPKc
+0x10000177C	0x00000014	[  6] __ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE20__throw_length_errorB9nqe210106Ev
+0x100001790	0x0000000C	[ 10] __Unwind_Resume.stub
+0x10000179C	0x0000000C	[  3] __ZN10math_utils7ProjectEdd.stub
+0x1000017A8	0x0000000C	[  3] __ZN11render_core7ScreenXEd.stub
+0x1000017B4	0x0000000C	[  7] __ZNSt11logic_errorC2EPKc.stub
+0x1000017C0	0x0000000C	[  7] __ZdlPv.stub
+0x1000017CC	0x0000000C	[  7] __Znwm.stub
+0x1000017D8	0x0000000C	[  7] ___cxa_allocate_exception.stub
+0x1000017E4	0x0000000C	[  9] ___cxa_atexit.stub
+0x1000017F0	0x0000000C	[  7] ___cxa_free_exception.stub
+0x1000017FC	0x0000000C	[  7] ___cxa_throw.stub
+0x100001808	0x0000000C	[  9] _memcpy.stub
+0x100001814	0x0000000C	[  9] _printf.stub
+0x100001820	0x0000000C	[  9] _strlen.stub
+0x10000182C	0x00000004	[  0] init-offset
+0x100001830	0x00000004	[  1] literal string: APP
+0x100001834	0x00000009	[  1] literal string: starting
+0x10000183D	0x0000000A	[  1] literal string: sample.db
+0x100001847	0x00000009	[  4] literal string: [%s] %s\n
+0x100001850	0x00000007	[  5] literal string: vector
+0x100001857	0x0000000D	[  6] literal string: basic_string
+0x100001864	0x00000010	[  5] GCC_except_table4
+0x100001874	0x00000010	[  6] GCC_except_table2
+0x100001884	0x00000098	[  0] compact unwind info
+0x100004000	0x00000008	[  3] __ZN10math_utils7ProjectEdd.got
+0x100004008	0x00000008	[  3] __ZN11render_core7ScreenXEd.got
+0x100004010	0x00000008	[  7] __ZNSt11logic_errorC2EPKc.got
+0x100004018	0x00000008	[  7] __ZNSt12length_errorD1Ev.got
+0x100004020	0x00000008	[  7] __ZTVSt12length_error.got
+0x100004028	0x00000008	[  7] ___cxa_allocate_exception.got
+0x100004030	0x00000008	[  7] ___cxa_free_exception.got
+0x100004038	0x00000008	[  7] ___cxa_throw.got
+0x100004040	0x00000008	[  7] ___gxx_personality_v0.got
+0x100004048	0x00000008	[ 10] __Unwind_Resume.got
+0x100004050	0x00000008	[  9] ___cxa_atexit.got
+0x100004058	0x00000008	[  9] _memcpy.got
+0x100004060	0x00000008	[  9] _printf.got
+0x100004068	0x00000008	[  9] _strlen.got
+0x100004070	0x00000008	[  7] __ZTISt12length_error.got
+0x100004078	0x00000008	[  7] __ZdlPv.got
+0x100004080	0x00000008	[  7] __Znwm.got
+0x100008000	0x00000018	[  5] __ZN12store_readerL7g_tilesE

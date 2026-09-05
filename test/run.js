@@ -124,67 +124,67 @@ check('build directory discovery finds this build tree', () => {
   assert.ok(found.indexOf(buildDir) !== -1, 'discovery returned ' + JSON.stringify(found));
 });
 
-const isSampleProject = byName.has('navi_app') && byName.has('map_engine');
+const isSampleProject = byName.has('sample_app') && byName.has('engine');
 if (isSampleProject) {
   console.log('');
   console.log('--- sample project checks ---');
 
   check('UTILITY targets are excluded from the link graph', () => {
     assert.strictEqual(fileApi.isLinkable(byName.get('generate_docs')), false);
-    assert.strictEqual(fileApi.isLinkable(byName.get('navi_app')), true);
+    assert.strictEqual(fileApi.isLinkable(byName.get('sample_app')), true);
   });
 
   check('direct dependencies match target_link_libraries', () => {
-    assert.deepStrictEqual(namesOf(byName.get('navi_app').directDependencyIds),
-                           ['dlt_wrapper', 'map_engine', 'ui_core']);
-    assert.deepStrictEqual(namesOf(byName.get('map_engine').directDependencyIds),
-                           ['geo_utils', 'nds_reader']);
+    assert.deepStrictEqual(namesOf(byName.get('sample_app').directDependencyIds),
+                           ['engine', 'log_wrapper', 'render_core']);
+    assert.deepStrictEqual(namesOf(byName.get('engine').directDependencyIds),
+                           ['math_utils', 'store_reader']);
   });
 
   check('CMake still reports the full transitive closure', () => {
-    assert.deepStrictEqual(namesOf(byName.get('navi_app').dependencyIds),
-                           ['dlt_wrapper', 'geo_utils', 'map_engine', 'nds_reader', 'sqlite_wrap', 'ui_core']);
+    assert.deepStrictEqual(namesOf(byName.get('sample_app').dependencyIds),
+                           ['db_wrap', 'engine', 'log_wrapper', 'math_utils', 'render_core', 'store_reader']);
   });
 
   check('reverse dependencies name only the direct consumers', () => {
-    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('geo_utils').id)),
-                           ['map_engine', 'ui_core']);
-    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('sqlite_wrap').id)),
-                           ['nds_reader']);
+    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('math_utils').id)),
+                           ['engine', 'render_core']);
+    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('db_wrap').id)),
+                           ['store_reader']);
   });
 
   check('reverse dependencies span app and test targets', () => {
-    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('nds_reader').id)),
-                           ['map_engine', 'nds_test']);
+    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('store_reader').id)),
+                           ['engine', 'store_test']);
   });
 
   check('static libraries have no link line', () => {
-    assert.deepStrictEqual(byName.get('map_engine').externalLibraries, []);
+    assert.deepStrictEqual(byName.get('engine').externalLibraries, []);
   });
 
   check('transitive path follows direct edges hop by hop', () => {
-    const ids = fileApi.findLinkPath(model, byName.get('navi_app').id, byName.get('sqlite_wrap').id);
-    assert.deepStrictEqual(ids.map(nameOf), ['navi_app', 'map_engine', 'nds_reader', 'sqlite_wrap']);
+    const ids = fileApi.findLinkPath(model, byName.get('sample_app').id, byName.get('db_wrap').id);
+    assert.deepStrictEqual(ids.map(nameOf), ['sample_app', 'engine', 'store_reader', 'db_wrap']);
   });
 
   check('unrelated targets report no path', () => {
     assert.strictEqual(
-      fileApi.findLinkPath(model, byName.get('map_test').id, byName.get('dlt_wrapper').id), null);
+      fileApi.findLinkPath(model, byName.get('engine_test').id, byName.get('log_wrapper').id), null);
   });
 
   check('a target reaches itself in zero hops', () => {
-    const id = byName.get('geo_utils').id;
+    const id = byName.get('math_utils').id;
     assert.deepStrictEqual(fileApi.findLinkPath(model, id, id), [id]);
   });
 }
 
 if (usingFixture) {
   check('fixture: system libraries survive filtering', () => {
-    assert.deepStrictEqual(byName.get('navi_app').externalLibraries,
-                           ['-lsqlite3', '-ldlt', '-lpthread']);
+    assert.deepStrictEqual(byName.get('sample_app').externalLibraries,
+                           ['-lsqlite3', '-lz', '-lpthread']);
   });
   check('fixture: frameworks are captured', () => {
-    assert.deepStrictEqual(byName.get('ui_core').externalLibraries, ['-framework CoreGraphics']);
+    assert.deepStrictEqual(byName.get('render_core').externalLibraries, ['-framework CoreGraphics']);
   });
 }
 
