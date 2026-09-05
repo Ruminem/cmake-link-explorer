@@ -1,0 +1,85 @@
+{
+  "name": "cmake-link-explorer",
+  "displayName": "CMake Link Explorer",
+  "description": "Browse CMake target link structure in both directions: what a target links, and what links it.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./src/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cmakeLinkExplorer",
+          "title": "CMake Links",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "cmakeLinkExplorer": [
+        {
+          "id": "cmakeLinkExplorer.targets",
+          "name": "Targets",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "cmakeLinkExplorer.targets",
+        "contents": "No CMake build directory loaded yet.\n\nPick the build directory that contains CMakeCache.txt.\n[Select build directory](command:cmakeLinkExplorer.selectBuildDir)\n\nIf the build directory is already selected but empty, CMake needs to regenerate once so it can emit the File API reply.\n[Run CMake configure](command:cmakeLinkExplorer.configure)"
+      }
+    ],
+    "commands": [
+      { "command": "cmakeLinkExplorer.refresh", "title": "Refresh", "category": "CMake Links", "icon": "$(refresh)" },
+      { "command": "cmakeLinkExplorer.selectBuildDir", "title": "Select Build Directory", "category": "CMake Links", "icon": "$(folder-opened)" },
+      { "command": "cmakeLinkExplorer.search", "title": "Find Target", "category": "CMake Links", "icon": "$(search)" },
+      { "command": "cmakeLinkExplorer.whyLinked", "title": "Why Is This Linked? (trace path between two targets)", "category": "CMake Links" },
+      { "command": "cmakeLinkExplorer.configure", "title": "Run CMake Configure", "category": "CMake Links" },
+      { "command": "cmakeLinkExplorer.openCMakeLists", "title": "Open CMakeLists.txt", "category": "CMake Links", "icon": "$(go-to-file)" },
+      { "command": "cmakeLinkExplorer.copyName", "title": "Copy Target Name", "category": "CMake Links" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "cmakeLinkExplorer.search", "when": "view == cmakeLinkExplorer.targets", "group": "navigation@1" },
+        { "command": "cmakeLinkExplorer.refresh", "when": "view == cmakeLinkExplorer.targets", "group": "navigation@2" },
+        { "command": "cmakeLinkExplorer.selectBuildDir", "when": "view == cmakeLinkExplorer.targets", "group": "navigation@3" },
+        { "command": "cmakeLinkExplorer.whyLinked", "when": "view == cmakeLinkExplorer.targets", "group": "1_actions" },
+        { "command": "cmakeLinkExplorer.configure", "when": "view == cmakeLinkExplorer.targets", "group": "1_actions" }
+      ],
+      "view/item/context": [
+        { "command": "cmakeLinkExplorer.openCMakeLists", "when": "view == cmakeLinkExplorer.targets && viewItem =~ /^target/", "group": "inline" },
+        { "command": "cmakeLinkExplorer.copyName", "when": "view == cmakeLinkExplorer.targets && viewItem =~ /^target/", "group": "1_copy" }
+      ]
+    },
+    "configuration": {
+      "title": "CMake Link Explorer",
+      "properties": {
+        "cmakeLinkExplorer.buildDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the CMake build directory (the one containing CMakeCache.txt). Leave empty to auto-detect."
+        },
+        "cmakeLinkExplorer.configuration": {
+          "type": "string",
+          "default": "",
+          "description": "Which CMake configuration to show for multi-config generators (e.g. Debug, Release). Empty uses the first one."
+        },
+        "cmakeLinkExplorer.showUtilityTargets": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show UTILITY targets (custom targets, ALL_BUILD, ZERO_CHECK). Off by default because they are noise for link structure."
+        },
+        "cmakeLinkExplorer.showExternalLibraries": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show libraries that come from outside the project (system libs, frameworks, prebuilt .a/.so)."
+        }
+      }
+    }
+  }
+}
