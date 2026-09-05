@@ -607,7 +607,8 @@ function formatBytes(value) {
   // Always keep one decimal: in a size tool the difference between 17.5 KB and
   // 18 KB is exactly the kind of thing being looked for.
   if (size < 1024 * 1024) return sign + (size / 1024).toFixed(1) + ' KB';
-  return sign + (size / (1024 * 1024)).toFixed(2) + ' MB';
+  if (size < 1024 * 1024 * 1024) return sign + (size / (1024 * 1024)).toFixed(2) + ' MB';
+  return sign + (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 }
 
 module.exports = {

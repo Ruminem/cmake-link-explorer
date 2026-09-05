@@ -40,6 +40,51 @@ check('anything that is not an include is rejected', () => {
   }
 });
 
+console.log('');
+console.log('--- the edit keeps the line endings the file already had ---');
+
+// CMakeLists.txt on Windows is usually CRLF, and this extension is used on
+// Windows. Writing a bare \n into one leaves a single mixed line that shows up
+// in every diff. These need no build tree, so they run everywhere.
+{
+  const scratch = fs.mkdtempSync(path.join(require('os').tmpdir(), 'clx-eol-'));
+  const plan = (content) => {
+    fs.writeFileSync(path.join(scratch, 'CMakeLists.txt'), content);
+    const edit = cmakeEdit.planLinkEdit({ sourceDir: scratch }, { name: 'foo', sourceDir: '' },
+                                        'newlib', 'PRIVATE');
+    return { edit, after: content.slice(0, edit.offset) + edit.insert + content.slice(edit.offset) };
+  };
+  const lonelyNewline = (text) => /(^|[^\r])\n/.test(text);
+
+  check('appending to a CRLF file stays CRLF', () => {
+    const { edit, after } = plan('add_library(foo foo.cpp)\r\ntarget_link_libraries(foo\r\n    bar\r\n)\r\n');
+    assert.strictEqual(edit.kind, 'append');
+    assert.ok(!lonelyNewline(after), JSON.stringify(after));
+    assert.ok(after.indexOf('    bar\r\n    newlib') !== -1, JSON.stringify(after));
+  });
+
+  check('creating a call in a CRLF file stays CRLF', () => {
+    const { edit, after } = plan('add_library(foo foo.cpp)\r\n');
+    assert.strictEqual(edit.kind, 'create');
+    assert.ok(!lonelyNewline(after), JSON.stringify(after));
+  });
+
+  check('an LF file is left as LF', () => {
+    const appended = plan('add_library(foo foo.cpp)\ntarget_link_libraries(foo\n    bar\n)\n');
+    assert.ok(appended.after.indexOf('\r') === -1, JSON.stringify(appended.after));
+    const created = plan('add_library(foo foo.cpp)\n');
+    assert.ok(created.after.indexOf('\r') === -1, JSON.stringify(created.after));
+  });
+
+  check('a single-line call is still extended in place', () => {
+    const { after } = plan('add_library(foo foo.cpp)\r\ntarget_link_libraries(foo bar)\r\n');
+    assert.ok(after.indexOf('target_link_libraries(foo bar newlib)') !== -1, JSON.stringify(after));
+    assert.ok(!lonelyNewline(after), JSON.stringify(after));
+  });
+
+  fs.rmSync(scratch, { recursive: true, force: true });
+}
+
 if (!fileApi.isBuildDir(build)) {
   console.log('');
   console.log('(skipped the rest: run ./test/bootstrap.sh to create test/sample-project/build)');

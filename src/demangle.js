@@ -39,11 +39,18 @@ const SPECIAL = { TV: 'vtable for ', TT: 'VTT for ', TI: 'typeinfo for ', TS: 't
 
 class Bail extends Error {}
 
+// type() recurses once per pointer, reference or qualifier, so a symbol carrying
+// a few thousand of them would overflow the stack and throw out of a function
+// whose whole contract is to return null instead. Real signatures never come
+// close to this.
+const MAX_TYPE_DEPTH = 64;
+
 class Reader {
   constructor(text) {
     this.text = text;
     this.pos = 0;
     this.subs = [];
+    this.depth = 0;
   }
 
   peek(count) { return this.text.substr(this.pos, count || 1); }
@@ -128,6 +135,15 @@ class Reader {
 
   // <type>, restricted to the forms that show up in ordinary signatures.
   type() {
+    if (++this.depth > MAX_TYPE_DEPTH) throw new Bail();
+    try {
+      return this.typeInner();
+    } finally {
+      this.depth--;
+    }
+  }
+
+  typeInner() {
     const ch = this.peek();
 
     if (ch === 'P') { this.take(1); return this.give(this.type() + '*'); }

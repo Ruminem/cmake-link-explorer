@@ -350,6 +350,15 @@ check('anything outside the subset is declined rather than guessed at', () => {
   assert.strictEqual(demangleName(null), null);
 });
 
+check('a pathologically nested type is declined, not thrown on', () => {
+  // type() recurses per qualifier, so without a depth cap these overflowed the
+  // stack and threw out of a function that is supposed to return null.
+  assert.strictEqual(demangleName('_Z1f' + 'P'.repeat(50000) + 'i'), null);
+  assert.strictEqual(demangleName('_Z1f' + 'K'.repeat(50000) + 'i'), null);
+  // Depths a real signature reaches still work.
+  assert.strictEqual(demangleName('_Z1fPPPPPi'), 'f(int*****)');
+});
+
 console.log('');
 console.log('--- diff ---');
 
@@ -649,6 +658,10 @@ check('byte formatting stays readable at every scale', () => {
   assert.strictEqual(mapFile.formatBytes(17923), '17.5 KB');
   assert.strictEqual(mapFile.formatBytes(1024 * 1024), '1.00 MB');
   assert.strictEqual(mapFile.formatBytes(-2048), '-2.0 KB');
+  // The ladder used to stop at MB, so a gigabyte read as "1024.00 MB".
+  assert.strictEqual(mapFile.formatBytes(1024 * 1024 * 1024), '1.00 GB');
+  assert.strictEqual(mapFile.formatBytes(1024 * 1024 * 1024 - 1), '1024.00 MB');
+  assert.strictEqual(mapFile.formatBytes(3 * 1024 * 1024 * 1024), '3.00 GB');
 });
 
 console.log('');

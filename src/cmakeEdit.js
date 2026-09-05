@@ -133,6 +133,10 @@ function planLinkEdit(model, target, library, keyword) {
     return { file: null, kind: 'manual', reason: 'Could not read ' + file };
   }
 
+  // CMakeLists.txt on Windows is usually CRLF. Writing a bare \n into it leaves
+  // one mixed line that every diff and line-ending lint then picks up.
+  const eol = text.indexOf('\r\n') === -1 ? '\n' : '\r\n';
+
   const existing = findCommand(text, ['target_link_libraries'], target.name);
   if (existing) {
     // Match the indentation the call already uses so the edit is invisible in a
@@ -142,7 +146,7 @@ function planLinkEdit(model, target, library, keyword) {
     const indent = indented ? /^(\s+)/.exec(indented)[1] : '    ';
     const multiline = lines.length > 1;
 
-    const insert = multiline ? '\n' + indent + library : ' ' + library;
+    const insert = multiline ? eol + indent + library : ' ' + library;
     const offset = trimBackFrom(text, existing.close);
     return {
       file,
@@ -166,14 +170,14 @@ function planLinkEdit(model, target, library, keyword) {
 
   const lineEnd = text.indexOf('\n', declaration.close);
   const offset = lineEnd === -1 ? text.length : lineEnd + 1;
-  const statement = 'target_link_libraries(' + target.name + ' ' + scope + ' ' + library + ')\n';
+  const statement = 'target_link_libraries(' + target.name + ' ' + scope + ' ' + library + ')' + eol;
   const needsBlankLine = !/\n\s*\n$/.test(text.slice(0, offset));
 
   return {
     file,
     kind: 'create',
     offset,
-    insert: (needsBlankLine ? '\n' : '') + statement,
+    insert: (needsBlankLine ? eol : '') + statement,
     position: offsetToPosition(text, offset),
     preview: statement.trim()
   };
