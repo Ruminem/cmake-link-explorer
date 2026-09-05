@@ -98,6 +98,37 @@ check('UTILITY targets are never offered as providers', () => {
   }
 });
 
+check('a header created after the index was built is still found', () => {
+  const fresh = fileApi.loadModel(build, '');
+  resolver.providersOfHeader(fresh, 'engine.h', fileApi.isLinkable); // builds the index
+  const added = path.join(project, 'libs', 'engine', 'generated_by_test.h');
+  fs.writeFileSync(added, '#pragma once\n');
+  try {
+    // The index is rebuilt on a miss once it is old enough; force that here
+    // rather than making the test wait.
+    const index = resolver.__headerIndexForTests(fresh);
+    index.builtAt = 0;
+    const found = resolver.providersOfHeader(fresh, 'generated_by_test.h', fileApi.isLinkable);
+    assert.ok(found.length, 'a newly written header was not picked up');
+    assert.strictEqual(found[0].target.name, 'engine');
+  } finally {
+    fs.unlinkSync(added);
+  }
+});
+
+check('paths are matched however the editor cased them', () => {
+  // VS Code does not always hand back the casing CMake recorded, and Windows and
+  // macOS do not care about the difference.
+  const upper = path.join(project.toUpperCase(), 'app', 'sample_app.cpp');
+  const owner = resolver.targetOwningFile(model, upper);
+  if (process.platform === 'win32' || process.platform === 'darwin') {
+    assert.ok(owner, 'case-insensitive filesystem should still match');
+    assert.strictEqual(owner.name, 'sample_app');
+  } else {
+    assert.strictEqual(owner, null, 'a case-sensitive filesystem must not match');
+  }
+});
+
 console.log('');
 console.log('--- what needs to change ---');
 

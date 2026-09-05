@@ -69,6 +69,11 @@ function parseGnuLd(text, filePath) {
   let mode = 'preamble';
   let pendingSection = null; // a section name whose address/size wrapped to the next line
   let pendingMember = null;  // an archive member whose requester wrapped to the next line
+  // The input section a symbol belongs to is the one listed just above it. It is
+  // cleared at every output section, because a linker script can define symbols
+  // there that belong to no object at all; without that they would be credited
+  // to whichever object happened to come last.
+  let currentEntry = null;
 
   const outputSectionRe = new RegExp('^(\\.[^\\s]+)\\s+(' + HEX + ')\\s+(' + HEX + ')');
   const inputSectionRe = new RegExp('^ (\\.[^\\s]+)\\s+(' + HEX + ')\\s+(' + HEX + ')\\s+(.+)$');
@@ -95,6 +100,7 @@ function parseGnuLd(text, filePath) {
       key: originKey(parsed)
     };
     (discarded ? model.discarded : model.entries).push(entry);
+    if (!discarded) currentEntry = entry;
     return entry;
   };
 
@@ -104,10 +110,12 @@ function parseGnuLd(text, filePath) {
     if (/^Archive member included/.test(line)) { mode = 'archive'; continue; }
     if (/^Allocating common symbols/.test(line)) { mode = 'common'; continue; }
     if (/^Discarded input sections/.test(line)) {
-      mode = 'discarded'; pendingSection = null; pendingMember = null; continue;
+      mode = 'discarded'; pendingSection = null; pendingMember = null; currentEntry = null; continue;
     }
     if (/^Memory Configuration/.test(line)) { mode = 'memory'; pendingMember = null; continue; }
-    if (/^Linker script and memory map/.test(line)) { mode = 'map'; pendingSection = null; continue; }
+    if (/^Linker script and memory map/.test(line)) {
+      mode = 'map'; pendingSection = null; currentEntry = null; continue;
+    }
     if (/^(Merging object attributes|Cross Reference Table)/.test(line)) {
       mode = 'other'; pendingMember = null; continue;
     }
@@ -199,6 +207,7 @@ function parseGnuLd(text, filePath) {
           address: parseInt(output[2], 16),
           size: parseInt(output[3], 16)
         });
+        currentEntry = null;
         continue;
       }
 
@@ -211,8 +220,8 @@ function parseGnuLd(text, filePath) {
           model.symbols.push({
             name,
             address: parseInt(symbol[1], 16),
-            key: model.entries.length ? model.entries[model.entries.length - 1].key : null,
-            section: model.entries.length ? model.entries[model.entries.length - 1].section : null
+            key: currentEntry ? currentEntry.key : null,
+            section: currentEntry ? currentEntry.section : null
           });
         }
       }
@@ -394,7 +403,23 @@ function parse(text, filePath) {
   return summarise(model);
 }
 
+// V8 cannot hold a string much beyond half a gigabyte, and a map that large
+// would exhaust memory long before it finished parsing. Say so plainly instead
+// of surfacing a RangeError from deep inside the runtime.
+const MAX_MAP_BYTES = 256 * 1024 * 1024;
+
 function parseFile(filePath) {
+  let size = 0;
+  try {
+    size = fs.statSync(filePath).size;
+  } catch (e) {
+    // Let readFileSync produce the real error.
+  }
+  if (size > MAX_MAP_BYTES) {
+    throw new Error(
+      path.basename(filePath) + ' is ' + formatBytes(size) +
+      '; this reads map files up to ' + formatBytes(MAX_MAP_BYTES) + '.');
+  }
   return parse(fs.readFileSync(filePath, 'utf8'), filePath);
 }
 

@@ -165,12 +165,35 @@ check('a root target icon reflects its type', () => {
   assert.strictEqual(byName.get('render_core').iconPath.id, 'library');
 });
 
-check('the tooltip spells out both directions and the transitive count', () => {
+check('the tooltip is built only when the row is resolved', () => {
   const node = roots.find((n) => nameOf(n) === 'sample_app');
-  const tooltip = provider.getTreeItem(node).tooltip.value;
+  // Drawing a large list should not build markdown for every row; VS Code asks
+  // for a tooltip through resolveTreeItem when a row is hovered.
+  const item = provider.getTreeItem(node);
+  assert.strictEqual(item.tooltip, undefined);
+
+  const tooltip = provider.resolveTreeItem(item, node).tooltip.value;
   assert.ok(/links → 3/.test(tooltip), tooltip);
   assert.ok(/including transitive/.test(tooltip), tooltip);
   assert.ok(/linked by ← 0/.test(tooltip), tooltip);
+});
+
+check('changing a setting is reflected without an explicit refresh', () => {
+  // The neighbour lists are cached; the cache key has to carry the settings that
+  // decide what goes in them.
+  const node = () => provider.getChildren().find((n) => nameOf(n) === 'sample_app');
+  const forward = () => provider.getChildren(node())
+    .filter((c) => c.direction === 'forward').map(nameOf);
+
+  assert.deepStrictEqual(forward(), ['engine', 'log_wrapper', 'render_core']);
+  vscodeStub.__setConfig('showTransitiveDependencies', true);
+  try {
+    assert.deepStrictEqual(forward(),
+      ['db_wrap', 'engine', 'log_wrapper', 'math_utils', 'render_core', 'store_reader']);
+  } finally {
+    vscodeStub.__clearConfig();
+  }
+  assert.deepStrictEqual(forward(), ['engine', 'log_wrapper', 'render_core']);
 });
 
 check('tree item ids are unique', () => {

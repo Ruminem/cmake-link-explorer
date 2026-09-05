@@ -192,7 +192,13 @@ async function runChecks() {
     assert.strictEqual(item.description, '←2');
     assert.strictEqual(item.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
     assert.ok(item.iconPath instanceof vscode.ThemeIcon, 'icon is not a ThemeIcon');
-    assert.ok(item.tooltip instanceof vscode.MarkdownString, 'tooltip is not a MarkdownString');
+
+    // Tooltips are built on demand, which is what VS Code's resolveTreeItem is
+    // for; drawing the list must not pay for markdown on every row.
+    assert.strictEqual(item.tooltip, undefined);
+    const resolved = provider.resolveTreeItem(item, node);
+    assert.ok(resolved.tooltip instanceof vscode.MarkdownString, 'tooltip is not a MarkdownString');
+    assert.ok(/linked by ← 2/.test(resolved.tooltip.value), resolved.tooltip.value);
   });
 
   await check('both directions are counted on the row itself', () => {

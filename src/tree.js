@@ -26,6 +26,10 @@ const SHORT_TYPE = {
 
 // A tree view has no columns, so anything that needs to be readable at a glance
 // has to fit in the one description string next to the label.
+// One collator reused everywhere: String.prototype.localeCompare builds a new
+// one on every call, which is most of the cost of sorting a large target list.
+const byName = new Intl.Collator(undefined, { sensitivity: 'variant' });
+
 const FORWARD_MARK = '→';
 const REVERSE_MARK = '←';
 
@@ -49,6 +53,10 @@ class TargetTreeProvider {
     // targetId -> {size, dynamic, objects}, from a loaded linker map. Null until
     // a map is opened, and the size column simply does not appear.
     this.sizes = null;
+    // neighbourIds sorts, and the sort comparator and every rendered row ask for
+    // the same lists over and over; on a large project that was tens of
+    // thousands of sorts to draw one screen.
+    this.neighbourCache = new Map();
   }
 
   /** Attaches per-target sizes worked out from a linker map, or null to drop them. */
@@ -66,6 +74,7 @@ class TargetTreeProvider {
     this.model = model;
     this.error = null;
     this.rootNodes = [];
+    this.neighbourCache = new Map();
     this._onDidChangeTreeData.fire();
   }
 
@@ -78,6 +87,8 @@ class TargetTreeProvider {
 
   refresh() {
     this.rootNodes = [];
+    // Settings change which neighbours are visible, so the lists go with them.
+    this.neighbourCache = new Map();
     this._onDidChangeTreeData.fire();
   }
 
@@ -101,14 +112,14 @@ class TargetTreeProvider {
     const kept = this.showUtility ? all : all.filter(fileApi.isLinkable);
 
     if (this.sortOrder === 'name') {
-      return kept.sort((a, b) => a.name.localeCompare(b.name));
+      return kept.sort((a, b) => byName.compare(a.name, b.name));
     }
     // Sorting by size only makes sense once a map has been loaded; without one
     // every target would compare equal and the order would look arbitrary.
     if (this.sortOrder === 'size' && this.sizes) {
       return kept.sort((a, b) => {
         const size = (t) => (this.sizeOf(t.id) || { size: -1 }).size;
-        return size(b) - size(a) || a.name.localeCompare(b.name);
+        return size(b) - size(a) || byName.compare(a.name, b.name);
       });
     }
     return kept.sort((a, b) => {
@@ -117,7 +128,7 @@ class TargetTreeProvider {
       const dependents = (t) => this.neighbourIds(t.id, 'reverse').length;
       const diff = dependents(b) - dependents(a);
       if (diff) return diff;
-      return a.name.localeCompare(b.name);
+      return byName.compare(a.name, b.name);
     });
   }
 
@@ -159,21 +170,39 @@ class TargetTreeProvider {
   }
 
   neighbourIds(targetId, direction) {
+    // The settings decide what is in the list, so they belong in the key. Relying
+    // on refresh() being called first makes the cache quietly wrong the moment
+    // some other path changes a setting.
+    const key = (this.showTransitive ? 'T' : 't') + (this.showUtility ? 'U' : 'u') +
+                direction + ':' + targetId;
+    const cached = this.neighbourCache.get(key);
+    if (cached) return cached;
+
     const target = this.model.targets.get(targetId);
     const ids = direction === 'forward'
       ? (this.showTransitive ? target.dependencyIds : target.directDependencyIds)
       : (this.model.linkedBy.get(targetId) || []);
-    const visible = this.showUtility
-      ? ids
-      : ids.filter((id) => fileApi.isLinkable(this.model.targets.get(id)));
-    return visible.sort((a, b) =>
-      this.model.targets.get(a).name.localeCompare(this.model.targets.get(b).name));
+    const visible = (this.showUtility
+      ? ids.slice()
+      : ids.filter((id) => fileApi.isLinkable(this.model.targets.get(id))))
+      .sort((a, b) =>
+        byName.compare(this.model.targets.get(a).name, this.model.targets.get(b).name));
+
+    this.neighbourCache.set(key, visible);
+    return visible;
   }
 
   neighbourNodes(node, direction) {
     return this.neighbourIds(node.id, direction).map((id) => ({
       kind: 'target', direction, id, parent: node
     }));
+  }
+
+  rootChildCount(targetId) {
+    const external = this.showExternal &&
+      this.model.targets.get(targetId).externalLibraries.length ? 1 : 0;
+    return this.neighbourIds(targetId, 'forward').length +
+           this.neighbourIds(targetId, 'reverse').length + external;
   }
 
   // Counts shown on the row itself, so the shape of the graph is visible without
@@ -196,6 +225,16 @@ class TargetTreeProvider {
     return row.dynamic ? 'dynamic' : formatBytes(row.size);
   }
 
+  // Tooltips are markdown built from several lookups, and building one for every
+  // row on every redraw is most of the cost of drawing a large list. VS Code
+  // asks for them only when a row is actually hovered.
+  resolveTreeItem(item, node) {
+    if (node.kind === 'target' && this.model) {
+      item.tooltip = this.targetTooltip(this.model.targets.get(node.id), node.direction);
+    }
+    return item;
+  }
+
   getTreeItem(node) {
     if (node.kind === 'library') return this.libraryItem(node);
     if (node.kind === 'external') return this.externalItem(node);
@@ -205,9 +244,10 @@ class TargetTreeProvider {
   targetItem(node) {
     const target = this.model.targets.get(node.id);
     const root = node.direction === 'root';
-    const onward = root
-      ? this.getChildren(node).length
-      : this.neighbourIds(node.id, node.direction).length;
+    // Counting is enough to decide whether the row expands; building the child
+    // nodes here would allocate them again for every row on every redraw.
+    const onward = root ? this.rootChildCount(node.id)
+                        : this.neighbourIds(node.id, node.direction).length;
 
     const item = new vscode.TreeItem(
       target.name,
@@ -231,7 +271,6 @@ class TargetTreeProvider {
                          (onward ? '   ' + mark + onward : '');
     }
 
-    item.tooltip = this.targetTooltip(target, node.direction);
     item.command = {
       command: 'cmakeLinkExplorer.openCMakeLists',
       title: 'Open CMakeLists.txt',

@@ -10,6 +10,10 @@
 const fs = require('fs');
 const path = require('path');
 
+// One collator reused everywhere: String.prototype.localeCompare builds a new
+// one on every call, which is most of the cost of sorting a large target list.
+const byName = new Intl.Collator(undefined, { sensitivity: 'variant' });
+
 const HEADER_EXTENSIONS = ['.h', '.hpp', '.hh', '.hxx', '.inl', '.ipp'];
 
 /** Pulls the quoted or angled path out of an #include line, if that is what it is. */
@@ -26,6 +30,16 @@ function normalise(p) {
   return p.replace(/\\/g, '/');
 }
 
+// Windows and the default macOS volume are case-insensitive, and VS Code does
+// not always hand back the same casing CMake recorded -- a drive letter alone is
+// enough to differ. Comparing paths literally there silently matches nothing.
+const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
+
+function pathKey(p) {
+  const text = normalise(p);
+  return CASE_INSENSITIVE ? text.toLowerCase() : text;
+}
+
 /**
  * Which target compiles this file.
  *
@@ -36,26 +50,121 @@ function normalise(p) {
  * @returns {object|null} the target, or null when the file belongs to none
  */
 function targetOwningFile(model, absoluteFile) {
-  const file = normalise(absoluteFile);
-  const root = normalise(model.sourceDir);
+  const file = pathKey(absoluteFile);
+  const root = pathKey(model.sourceDir);
 
-  let best = null;
   for (const target of model.targets.values()) {
     for (const source of target.sources || []) {
-      const full = path.isAbsolute(source) ? normalise(source) : root + '/' + normalise(source);
+      const full = path.isAbsolute(source) ? pathKey(source) : root + '/' + pathKey(source);
       if (full === file) return target;
     }
   }
 
   // Fall back to the target whose own source directory is the closest ancestor.
+  let best = null;
   for (const target of model.targets.values()) {
     if (!target.sourceDir) continue;
-    const dir = root + '/' + normalise(target.sourceDir) + '/';
+    const dir = root + '/' + pathKey(target.sourceDir) + '/';
     if (file.startsWith(dir) && (!best || target.sourceDir.length > best.sourceDir.length)) {
       best = target;
     }
   }
   return best;
+}
+
+/**
+ * Every header under the source tree, indexed by file name.
+ *
+ * Built once per model and kept on a WeakMap, because the alternative -- asking
+ * the filesystem about each target in turn -- costs one directory walk per
+ * target. On a two thousand target project that was two thousand readdir calls
+ * for a single unresolved include, on a path the editor hits whenever the cursor
+ * moves onto one.
+ */
+const headerIndexes = new WeakMap();
+const MAX_INDEX_DEPTH = 12;
+const MAX_INDEX_FILES = 200000;
+
+function headerIndex(model) {
+  const cached = headerIndexes.get(model);
+  if (cached) return cached;
+
+  // Headers CMake was told about, and the directory each target owns. Both are
+  // looked at for every #include the cursor lands on, so scanning every target's
+  // source list each time showed up as milliseconds per keystroke.
+  const declared = new Map();
+  const directories = [];
+  for (const target of model.targets.values()) {
+    for (const source of target.sources || []) {
+      if (!isHeader(source)) continue;
+      const key = pathKey(path.basename(source));
+      const entry = { target, path: normalise(source), key: pathKey(source) };
+      const list = declared.get(key);
+      if (list) list.push(entry);
+      else declared.set(key, [entry]);
+    }
+    if (target.sourceDir) directories.push({ key: pathKey(target.sourceDir) + '/', target });
+  }
+  // Longest first, so the closest enclosing target wins.
+  directories.sort((a, b) => b.key.length - a.key.length);
+
+  const root = normalise(model.sourceDir);
+  const byName = new Map();
+  const skip = new Set(['node_modules', 'CMakeFiles', '_deps', 'build', 'out', 'Testing']);
+  let seen = 0;
+
+  const walk = (dir, relative, depth) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      return;
+    }
+    for (const entry of entries) {
+      if (seen >= MAX_INDEX_FILES) return;
+      if (entry.isFile()) {
+        if (!isHeader(entry.name)) continue;
+        seen++;
+        const key = CASE_INSENSITIVE ? entry.name.toLowerCase() : entry.name;
+        const list = byName.get(key);
+        const value = relative ? relative + '/' + entry.name : entry.name;
+        if (list) list.push(value);
+        else byName.set(key, [value]);
+      } else if (entry.isDirectory() && depth < MAX_INDEX_DEPTH &&
+                 !entry.name.startsWith('.') && !skip.has(entry.name)) {
+        walk(path.join(dir, entry.name), relative ? relative + '/' + entry.name : entry.name, depth + 1);
+      }
+    }
+  };
+
+  walk(root, '', 0);
+  const index = {
+    byName, declared, directories,
+    truncated: seen >= MAX_INDEX_FILES,
+    builtAt: Date.now()
+  };
+  headerIndexes.set(model, index);
+  return index;
+}
+
+// Writing a header and immediately including it is the ordinary way this comes
+// up, and the index would not know about the new file until CMake was run again.
+// Rebuilding on a miss keeps hits free and costs one walk at most this often.
+const INDEX_REFRESH_MS = 5000;
+
+function refreshedIndex(model, index) {
+  if (Date.now() - index.builtAt < INDEX_REFRESH_MS) return index;
+  headerIndexes.delete(model);
+  return headerIndex(model);
+}
+
+// The target whose own source directory is the closest ancestor of a path.
+function targetOwningPath(directories, relativePath) {
+  const file = pathKey(relativePath);
+  for (const entry of directories) {
+    if (file.startsWith(entry.key)) return entry.target;
+  }
+  return null;
 }
 
 /**
@@ -70,9 +179,9 @@ function targetOwningFile(model, absoluteFile) {
  */
 function providersOfHeader(model, includePath, isLinkable) {
   const wanted = normalise(includePath);
+  const wantedKey = pathKey(includePath);
   const base = path.basename(wanted);
   const bareName = wanted.indexOf('/') === -1;
-  const root = normalise(model.sourceDir);
   const found = new Map();
 
   const add = (target, file, how, rank) => {
@@ -80,47 +189,46 @@ function providersOfHeader(model, includePath, isLinkable) {
     if (!existing || rank < existing.rank) found.set(target.id, { target, file, how, rank });
   };
 
+  const index = headerIndex(model);
   // Only targets you could actually link. A UTILITY target cannot provide a
   // header, and in a project like abseil one of them is declared at the repo
   // root, which would otherwise make it claim every header in the tree.
-  const targets = [...model.targets.values()].filter((t) => !isLinkable || isLinkable(t));
+  const usable = (target) => !isLinkable || isLinkable(target);
+  const baseKey = pathKey(base);
 
-  for (const target of targets) {
-    for (const source of target.sources || []) {
-      const normalised = normalise(source);
-      if (!isHeader(normalised)) continue;
-      if (normalised === wanted || normalised.endsWith('/' + wanted)) {
-        add(target, normalised, 'listed', 0);
-      } else if (bareName && path.basename(normalised) === base) {
-        // Only trust a bare file name when that is all the #include gave us;
-        // "absl/base/config.h" must not match "absl/flags/config.h".
-        add(target, normalised, 'listed', 1);
-      }
+  for (const entry of index.declared.get(baseKey) || []) {
+    if (!usable(entry.target)) continue;
+    if (entry.key === wantedKey || entry.key.endsWith('/' + wantedKey)) {
+      add(entry.target, entry.path, 'listed', 0);
+    } else if (bareName) {
+      // Only trust a bare file name when that is all the #include gave us;
+      // "absl/base/config.h" must not match "absl/flags/config.h".
+      add(entry.target, entry.path, 'listed', 1);
     }
   }
 
   // A target that lists the header is authoritative, so stop before the weaker
-  // directory-based guesses can add noise.
+  // location-based guesses can add noise.
   if ([...found.values()].some((row) => row.rank === 0)) return sorted(found);
 
-  for (const target of targets) {
-    // A target declared at the source root owns nothing in particular.
-    if (!target.sourceDir) continue;
-    const dir = root + '/' + normalise(target.sourceDir);
+  let filesystem = index;
+  if (!(filesystem.byName.get(baseKey) || []).length) {
+    filesystem = refreshedIndex(model, index);
+  }
 
-    // The include path often starts with the directory the target lives in,
-    // e.g. "absl/strings/str_join.h" for the target in absl/strings.
-    if (wanted.startsWith(normalise(target.sourceDir) + '/') && fileExists(root + '/' + wanted)) {
-      add(target, wanted, 'owned', 1);
-      continue;
-    }
-    if (fileExists(dir + '/' + wanted)) {
-      add(target, path.relative(root, dir + '/' + wanted), 'owned', 2);
-      continue;
-    }
-    if (bareName) {
-      const nearby = findByName(dir, base, 3);
-      if (nearby) add(target, path.relative(root, nearby), 'nearby', 3);
+  const directories = filesystem.directories.filter((d) => usable(d.target));
+  for (const relative of filesystem.byName.get(baseKey) || []) {
+    const key = pathKey(relative);
+    const target = targetOwningPath(directories, relative);
+    if (!target) continue;
+
+    if (key === wantedKey || key.endsWith('/' + wantedKey)) {
+      // The include path resolves inside this target's directory.
+      add(target, relative, 'owned', 1);
+    } else if (!bareName && key === pathKey(target.sourceDir + '/' + wanted)) {
+      add(target, relative, 'owned', 2);
+    } else if (bareName) {
+      add(target, relative, 'nearby', 3);
     }
   }
 
@@ -134,40 +242,8 @@ function sorted(found) {
     .sort((a, b) =>
       a.rank - b.rank ||
       (b.target.sourceDir || '').length - (a.target.sourceDir || '').length ||
-      a.target.name.localeCompare(b.target.name))
+      byName.compare(a.target.name, b.target.name))
     .map(({ target, file, how }) => ({ target, file, how }));
-}
-
-function fileExists(p) {
-  try {
-    return fs.statSync(p).isFile();
-  } catch (e) {
-    return false;
-  }
-}
-
-// Shallow search so a wide source tree does not turn this into a crawl.
-function findByName(dir, name, maxDepth) {
-  const skip = new Set(['build', 'node_modules', 'CMakeFiles', '.git', '_deps']);
-  const walk = (current, depth) => {
-    let entries;
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch (e) {
-      return null;
-    }
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name === name) return path.join(current, entry.name);
-    }
-    if (depth >= maxDepth) return null;
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || skip.has(entry.name)) continue;
-      const hit = walk(path.join(current, entry.name), depth + 1);
-      if (hit) return hit;
-    }
-    return null;
-  };
-  return walk(dir, 0);
 }
 
 /**
@@ -228,5 +304,6 @@ module.exports = {
   targetOwningFile,
   providersOfHeader,
   scopeFor,
+  __headerIndexForTests: headerIndex,
   resolve
 };
