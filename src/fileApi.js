@@ -251,6 +251,30 @@ function backtraceChain(graph, index) {
   return chain;
 }
 
+// What a file is actually compiled with. CMake resolves generator expressions,
+// inherited PUBLIC/INTERFACE settings and directory-level properties before
+// writing this, so it is the effective set rather than what any one command in
+// the CMakeLists said. Targets with mixed languages get one group each, and the
+// sourceIndexes point back into the target's own source list.
+function compileGroupsOf(target) {
+  const groups = [];
+  for (const group of target.compileGroups || []) {
+    groups.push({
+      language: group.language || null,
+      standard: group.languageStandard ? group.languageStandard.standard || null : null,
+      defines: (group.defines || []).map((d) => d.define).filter(Boolean),
+      includes: (group.includes || []).filter((i) => typeof i.path === 'string').map((i) => ({
+        // target_include_directories(x PUBLIC .) reaches the codemodel as
+        // "<dir>/.", which is the same directory with a wart on the end.
+        path: i.path.replace(/[\\/]\.$/, ''),
+        isSystem: !!i.isSystem
+      })),
+      sourceIndexes: (group.sourceIndexes || []).filter((n) => typeof n === 'number')
+    });
+  }
+  return groups;
+}
+
 function dependencySites(target, graph) {
   const sites = new Map();
   for (const dependency of target.dependencies || []) {
@@ -303,6 +327,8 @@ function loadModel(buildDir, wantedConfiguration) {
       declaredVia: chain.length > 1 ? chain[0] : null,
       // depId -> the target_link_libraries() that pulled it in.
       dependencySites: dependencySites(target, target.backtraceGraph),
+      // Effective macros and include paths, per language group.
+      compileGroups: compileGroupsOf(target),
       // Relative to the source root, e.g. "libs/engine".
       sourceDir: (target.paths && target.paths.source) || '',
       dependencyIds: (target.dependencies || []).map((d) => d.id),

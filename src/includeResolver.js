@@ -73,6 +73,34 @@ function targetOwningFile(model, absoluteFile) {
 }
 
 /**
+ * The macros and include paths a file is actually compiled with.
+ *
+ * CMake attaches these to a compile group rather than to a file, and lists which
+ * of the target's sources belong to each. Headers are not compiled, so they are
+ * in no group at all; when the target has exactly one, that is what including
+ * them ends up meaning, and the answer is marked as inferred rather than read.
+ *
+ * @returns {{target: object, group: object|null, exact: boolean}|null}
+ */
+function compileSettingsForFile(model, absoluteFile) {
+  const target = targetOwningFile(model, absoluteFile);
+  if (!target) return null;
+
+  const groups = target.compileGroups || [];
+  const file = pathKey(absoluteFile);
+  const root = pathKey(model.sourceDir);
+  const index = (target.sources || []).findIndex((source) => {
+    const full = path.isAbsolute(source) ? pathKey(source) : root + '/' + pathKey(source);
+    return full === file;
+  });
+
+  const owning = index === -1 ? null
+    : groups.find((group) => group.sourceIndexes.indexOf(index) !== -1) || null;
+  if (owning) return { target, group: owning, exact: true };
+  return { target, group: groups.length === 1 ? groups[0] : null, exact: false };
+}
+
+/**
  * Every header under the source tree, indexed by file name.
  *
  * Built once per model and kept on a WeakMap, because the alternative -- asking
@@ -302,6 +330,7 @@ module.exports = {
   parseIncludeLine,
   isHeader,
   targetOwningFile,
+  compileSettingsForFile,
   providersOfHeader,
   scopeFor,
   __headerIndexForTests: headerIndex,

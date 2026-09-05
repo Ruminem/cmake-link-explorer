@@ -85,6 +85,83 @@ console.log('--- the edit keeps the line endings the file already had ---');
   fs.rmSync(scratch, { recursive: true, force: true });
 }
 
+console.log('');
+console.log('--- what a file is compiled with ---');
+
+// CMake attaches compile settings to a group and says which of the target's
+// sources belong to it. The model is spelled out here so these run without a
+// build tree; the shape matches what fileApi.loadModel produces.
+{
+  const group = (over) => Object.assign(
+    { language: 'CXX', standard: null, defines: [], includes: [], sourceIndexes: [] }, over);
+  const model = {
+    sourceDir: '/proj',
+    targets: new Map([
+      ['board', {
+        id: 'board', name: 'board', type: 'STATIC_LIBRARY', sourceDir: 'board',
+        sources: ['board/board.cpp', 'board/board.h'],
+        compileGroups: [group({
+          standard: '17',
+          // BOARD_REV is this target's own; the other two came through hal's
+          // PUBLIC settings, which is the part you cannot read off a CMakeLists.
+          defines: ['BOARD_REV=3', 'STM32F407xx', 'USE_HAL_DRIVER'],
+          includes: [{ path: '/proj/board/inc', isSystem: false },
+                     { path: '/opt/sdk', isSystem: true }],
+          sourceIndexes: [0]
+        })]
+      }],
+      ['mixed', {
+        id: 'mixed', name: 'mixed', type: 'STATIC_LIBRARY', sourceDir: 'mixed',
+        sources: ['mixed/a.c', 'mixed/b.cpp', 'mixed/shared.h'],
+        compileGroups: [
+          group({ language: 'C', defines: ['C_ONLY'], sourceIndexes: [0] }),
+          group({ language: 'CXX', defines: ['CXX_ONLY'], sourceIndexes: [1] })
+        ]
+      }]
+    ])
+  };
+
+  check('a compiled source reports its own group', () => {
+    const found = resolver.compileSettingsForFile(model, '/proj/board/board.cpp');
+    assert.strictEqual(found.target.name, 'board');
+    assert.strictEqual(found.exact, true);
+    assert.deepStrictEqual(found.group.defines, ['BOARD_REV=3', 'STM32F407xx', 'USE_HAL_DRIVER']);
+    assert.strictEqual(found.group.standard, '17');
+  });
+
+  check('system include directories are marked as such', () => {
+    const { group } = resolver.compileSettingsForFile(model, '/proj/board/board.cpp');
+    assert.deepStrictEqual(group.includes.map((i) => i.isSystem), [false, true]);
+  });
+
+  check('a header falls back to the target, flagged as inferred', () => {
+    // Headers are compiled by nobody, so they sit in no group at all.
+    const found = resolver.compileSettingsForFile(model, '/proj/board/board.h');
+    assert.strictEqual(found.target.name, 'board');
+    assert.strictEqual(found.exact, false);
+    assert.deepStrictEqual(found.group.defines, ['BOARD_REV=3', 'STM32F407xx', 'USE_HAL_DRIVER']);
+  });
+
+  check('a header in a two-language target is not guessed at', () => {
+    // C and C++ disagree here, so picking one would be inventing an answer.
+    const found = resolver.compileSettingsForFile(model, '/proj/mixed/shared.h');
+    assert.strictEqual(found.target.name, 'mixed');
+    assert.strictEqual(found.exact, false);
+    assert.strictEqual(found.group, null);
+  });
+
+  check('each language in a target keeps its own settings', () => {
+    assert.deepStrictEqual(
+      resolver.compileSettingsForFile(model, '/proj/mixed/a.c').group.defines, ['C_ONLY']);
+    assert.deepStrictEqual(
+      resolver.compileSettingsForFile(model, '/proj/mixed/b.cpp').group.defines, ['CXX_ONLY']);
+  });
+
+  check('a file no target compiles reports nothing', () => {
+    assert.strictEqual(resolver.compileSettingsForFile(model, '/elsewhere/x.cpp'), null);
+  });
+}
+
 if (!fileApi.isBuildDir(build)) {
   console.log('');
   console.log('(skipped the rest: run ./test/bootstrap.sh to create test/sample-project/build)');

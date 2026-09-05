@@ -117,6 +117,12 @@
         "icon": "$(library)"
       },
       {
+        "command": "cmakeLinkExplorer.compileSettings",
+        "title": "What Is This File Compiled With?",
+        "category": "CMake Links",
+        "icon": "$(settings)"
+      },
+      {
         "command": "cmakeLinkExplorer.applyLinkForInclude",
         "title": "Link The Library For This Include",
         "category": "CMake Links"
@@ -182,6 +188,11 @@
           "command": "cmakeLinkExplorer.linkForInclude",
           "when": "editorLangId == cpp || editorLangId == c",
           "group": "navigation@9"
+        },
+        {
+          "command": "cmakeLinkExplorer.compileSettings",
+          "when": "editorLangId == cpp || editorLangId == c",
+          "group": "navigation@10"
         }
       ],
       "commandPalette": [

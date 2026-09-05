@@ -60,6 +60,7 @@ function activate(context) {
   register('cmakeLinkExplorer.diffMaps', diffMaps);
   register('cmakeLinkExplorer.closeMap', closeMap);
   register('cmakeLinkExplorer.linkForInclude', linkForInclude);
+  register('cmakeLinkExplorer.compileSettings', compileSettings);
   register('cmakeLinkExplorer.applyLinkForInclude', reportInclude);
 
   context.subscriptions.push(
@@ -435,6 +436,68 @@ class LinkIncludeActionProvider {
     action.isPreferred = direct;
     return [action];
   }
+}
+
+// "Why is this #ifdef not firing, and which headers can this file even see?"
+// CMake has already resolved generator expressions and everything inherited
+// through PUBLIC/INTERFACE by the time it writes the codemodel, so this is the
+// effective set rather than a reading of the CMakeLists.
+async function compileSettings() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showInformationMessage('Open a source file first.');
+    return;
+  }
+  if (!provider.model) {
+    vscode.window.showWarningMessage('No CMake targets loaded yet.');
+    return;
+  }
+
+  const file = editor.document.uri.fsPath;
+  const found = includeResolver.compileSettingsForFile(provider.model, file);
+
+  output.clear();
+  output.show(true);
+  output.appendLine(path.basename(file));
+
+  if (!found) {
+    output.appendLine('');
+    output.appendLine('No target in this project compiles it.');
+    return;
+  }
+
+  const { target, group, exact } = found;
+  output.appendLine('  target     ' + target.name +
+                    '  [' + (SHORT_TYPE[target.type] || target.type) + ']');
+
+  if (!group) {
+    output.appendLine('');
+    output.appendLine(target.compileGroups && target.compileGroups.length
+      ? 'CMake lists no compile settings for this file, and ' + target.name +
+        ' has more than one language group, so which one applies is a guess. Not showing any.'
+      : 'CMake recorded no compile settings for ' + target.name + '.');
+    return;
+  }
+
+  const language = group.language || 'unknown';
+  output.appendLine('  language   ' + language + (group.standard ? ' (' + group.standard + ')' : ''));
+  if (!exact) {
+    // Headers are never in a compile group; say so rather than implying CMake
+    // reported this file directly.
+    output.appendLine('  note       not compiled directly; showing what ' + target.name + ' uses');
+  }
+
+  output.appendLine('');
+  output.appendLine('  defines (' + group.defines.length + ')');
+  for (const define of group.defines) output.appendLine('    ' + define);
+  if (!group.defines.length) output.appendLine('    (none)');
+
+  output.appendLine('');
+  output.appendLine('  include paths (' + group.includes.length + ')');
+  for (const include of group.includes) {
+    output.appendLine('    ' + include.path + (include.isSystem ? '   [system]' : ''));
+  }
+  if (!group.includes.length) output.appendLine('    (none)');
 }
 
 async function linkForInclude() {

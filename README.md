@@ -7,6 +7,7 @@ CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 
 | **Link for include** | 이 헤더 쓰려면 **뭘 링크해야 하나** | `#include` 쓰고 막혔을 때 |
 | **Targets** | 무엇이 무엇을 링크하나, 특히 **누가 이걸 링크하나** | 구조 파악, 영향 범위 |
 | **Linker Map** | **뭐가 용량을 먹나**, 지난 빌드 대비 뭐가 늘었나 | 바이너리가 커졌을 때 |
+| **Compiled With** | 이 파일의 **실효 매크로와 include 경로** | `#ifdef`가 안 잡힐 때 |
 
 # 설치
 
@@ -103,6 +104,39 @@ target_link_libraries(store_test PRIVATE store_reader log_wrapper)
 **한계 —** 헤더 전용 INTERFACE 라이브러리는 CMake 코드모델에 타겟으로 나오지
 않아서 찾을 수 없다. abseil의 `absl::config` 같은 것들이 여기 해당한다.
 그럴 땐 `not-found`라고 정직하게 말한다.
+
+---
+
+# What Is This File Compiled With?
+
+> "`#ifdef USE_HAL_DRIVER`가 왜 안 잡히지?"
+> "이 파일이 도대체 어느 include 경로를 보고 있지?"
+
+소스 파일을 열고 명령을 부르면 **실효 매크로와 include 경로**가 나온다.
+
+```
+board.cpp
+  target     board  [static]
+  language   CXX (17)
+
+  defines (3)
+    BOARD_REV=3
+    STM32F407xx
+    USE_HAL_DRIVER
+
+  include paths (2)
+    /proj/board/inc
+    /opt/sdk   [system]
+```
+
+**CMakeLists를 읽어서는 알 수 없는 답이다.** 위 예에서 `BOARD_REV=3`만 `board`가
+직접 정의한 것이고, `STM32F407xx`와 `USE_HAL_DRIVER`는 `hal`이 `PUBLIC`으로 붙여
+전파된 것이다. CMake가 제너레이터 표현식과 `PUBLIC`/`INTERFACE` 상속을 전부 해석한
+뒤에 코드모델을 쓰므로, 여기 나오는 게 컴파일러가 실제로 받는 값이다.
+
+**헤더는 컴파일되지 않아 어느 그룹에도 속하지 않는다.** 타겟에 언어 그룹이 하나뿐이면
+그걸 보여주되 추론이라고 표시하고, C와 C++가 섞인 타겟이면 **고르지 않는다.**
+둘 중 하나를 찍으면 답을 지어내는 셈이라서.
 
 ---
 
@@ -374,12 +408,12 @@ cat /tmp/it.log
 
 | 대상 | |
 |---|---|
-| 합성 File API 픽스처 + backtrace 위치 | 24 checks |
+| 합성 File API 픽스처 + backtrace 위치 | 25 checks |
 | `test/sample-project` (실제 CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 16 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 62 checks |
-| include → 링크 해결 + CMakeLists 편집 | 30 checks |
+| include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 40 checks |
 | VS Code 확장 호스트 (1.136) | 35 checks |
 
 # 성능

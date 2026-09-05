@@ -218,6 +218,29 @@ if (usingFixture) {
   });
 }
 
+if (isSampleProject) {
+  check('compile groups survive a real codemodel', () => {
+    const engine = byName.get('engine');
+    // The synthetic fixture does not write compileGroups; a real reply does.
+    if (!engine.compileGroups.length) {
+      console.log('        (skipped: this reply carries no compile groups)');
+      return;
+    }
+    const group = engine.compileGroups[0];
+    assert.strictEqual(group.language, 'CXX');
+    assert.ok(group.sourceIndexes.length > 0, 'the group claims no sources');
+    // target_include_directories(engine PUBLIC .) has to show up somewhere,
+    // with the trailing "/." CMake writes for "." already trimmed off.
+    assert.ok(group.includes.some((i) => /engine$/.test(i.path)),
+              JSON.stringify(group.includes));
+    assert.ok(group.includes.every((i) => !/[\\/]\.$/.test(i.path)),
+              JSON.stringify(group.includes));
+    for (const include of group.includes) {
+      assert.strictEqual(typeof include.isSystem, 'boolean', JSON.stringify(include));
+    }
+  });
+}
+
 console.log('');
 console.log('--- where CMake says a target came from ---');
 
