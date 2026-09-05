@@ -470,6 +470,19 @@ function findMapFiles(root, maxDepth) {
  * @returns {Map<string, {size: number, objects: string[], dynamic: boolean}>}
  *          keyed by target id; targets absent from the map are simply missing.
  */
+// The map and the build tree do not have to come from the same machine. The
+// product is linked on Linux while day-to-day builds happen on Windows, so the
+// same target is libfoo.a in the map and foo.lib in the tree at hand, and an
+// exact comparison finds nothing at all - no error, just an empty size column.
+// Reducing both sides to a stem bridges that.
+const LIBRARY_EXT = /\.(?:a|lib|so|dll|dylib|elf|exe)$/i;
+
+function artifactStem(name) {
+  // libfoo.so.1.2.3 is still libfoo.so as far as the target is concerned.
+  const text = String(name || '').replace(/\.so(?:\.\d+)+$/i, '.so');
+  return text.replace(LIBRARY_EXT, '').replace(/^lib/, '').toLowerCase();
+}
+
 function matchTargets(targetModel, mapModel) {
   const byArtifact = new Map();
   const byObjectDir = new Map();
@@ -477,6 +490,20 @@ function matchTargets(targetModel, mapModel) {
     if (target.nameOnDisk) byArtifact.set(target.nameOnDisk, target);
     byObjectDir.set(target.name + '.dir', target);
   }
+
+  // Two targets can reduce to the same stem (foo.lib next to libfoo.a in one
+  // tree). Attributing sizes to whichever came first would be a guess, so drop
+  // the stem instead and leave those to the exact match.
+  const byStem = new Map();
+  const ambiguous = new Set();
+  for (const target of targetModel.targets.values()) {
+    if (!target.nameOnDisk) continue;
+    const stem = artifactStem(target.nameOnDisk);
+    if (!stem) continue;
+    if (byStem.has(stem)) ambiguous.add(stem);
+    else byStem.set(stem, target);
+  }
+  for (const stem of ambiguous) byStem.delete(stem);
 
   const DYNAMIC_TYPES = new Set(['SHARED_LIBRARY', 'MODULE_LIBRARY']);
   const matched = new Map();
@@ -489,6 +516,16 @@ function matchTargets(targetModel, mapModel) {
     if (!target) {
       const dir = /(?:^|\/)([^/]+)\.dir(?:\/|$)/.exec(object.object);
       if (dir) target = byObjectDir.get(dir[1] + '.dir');
+    }
+    // Only after every exact route has missed, and only for things that name a
+    // library: object files keep their own names across platforms, so stemming
+    // them would attribute app.o to a target called app rather than to the
+    // directory it was compiled in.
+    if (!target) {
+      const base = path.basename(String(object.archive || object.object || ''));
+      if (LIBRARY_EXT.test(base) || /\.so(?:\.\d+)+$/i.test(base)) {
+        target = byStem.get(artifactStem(base));
+      }
     }
     if (!target) continue;
 
@@ -570,6 +607,7 @@ module.exports = {
   demangle,
   largestSymbols,
   matchTargets,
+  artifactStem,
   diff,
   summarise,
   splitOrigin,

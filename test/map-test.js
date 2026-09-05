@@ -418,6 +418,75 @@ if (!fileApi.isBuildDir(fixtureBuild)) {
 }
 
 console.log('');
+console.log('--- joining across platforms ---');
+
+// Day-to-day builds are MSVC on Windows; the product is linked with GNU ld on
+// Linux. So the tree in front of you says foo.lib while the map you opened says
+// libfoo.a, and both are the same target. These need no fixture: the map is
+// checked in and the target side is spelled out here.
+const model = (rows) => ({
+  targets: new Map(rows.map((row, i) => [String(i), {
+    id: String(i), name: row[0], nameOnDisk: row[1], type: row[2] || 'STATIC_LIBRARY'
+  }]))
+});
+const joinNames = (targetModel) => {
+  const joined = mapFile.matchTargets(targetModel, gnu);
+  return [...joined.entries()]
+    .map(([id, row]) => targetModel.targets.get(id).name + '=' + row.size)
+    .sort();
+};
+
+check('a Linux map still joins to a tree configured on Windows', () => {
+  // gnu-ld-full.map carries libdemocore.a(...); MSVC would call it democore.lib.
+  assert.deepStrictEqual(joinNames(model([['democore', 'democore.lib']])),
+                         ['democore=18814']);
+});
+
+check('the same map joins to a Linux tree exactly as before', () => {
+  assert.deepStrictEqual(joinNames(model([['democore', 'libdemocore.a']])),
+                         ['democore=18814']);
+});
+
+check('shared library extensions are bridged too', () => {
+  const text = [
+    'Linker script and memory map', '',
+    '.text          0x0000000008000000       0x10',
+    ' .text         0x0000000008000000       0x10 ../libs/render/librender.so',
+    ''
+  ].join('\n');
+  const shared = mapFile.parse(text, 'synthetic');
+  const joined = mapFile.matchTargets(
+    model([['render', 'render.dll', 'SHARED_LIBRARY']]), shared);
+  assert.strictEqual(joined.size, 1, 'render.dll should have matched librender.so');
+  assert.strictEqual([...joined.values()][0].dynamic, true);
+});
+
+check('a versioned soname still reduces to the same target', () => {
+  assert.strictEqual(mapFile.artifactStem('libdemocore.so.1.2.3'), 'democore');
+  assert.strictEqual(mapFile.artifactStem('democore.lib'), 'democore');
+  assert.strictEqual(mapFile.artifactStem('libdemocore.a'), 'democore');
+});
+
+check('an exact name always wins over a stem', () => {
+  // libdemocore.a is present in the map. The first target owns that name
+  // outright, so it takes the size even though the second one also stems to it.
+  const names = joinNames(model([['real', 'libdemocore.a'], ['other', 'democore.lib']]));
+  assert.deepStrictEqual(names, ['real=18814']);
+});
+
+check('an ambiguous stem is left alone rather than guessed at', () => {
+  // Neither target owns libdemocore.a exactly and both stem to "democore",
+  // so attributing the size to either one would be a coin flip.
+  assert.deepStrictEqual(joinNames(model([['a', 'democore.lib'], ['b', 'democore.dll']])), []);
+});
+
+check('object files are not stemmed into same-named targets', () => {
+  // app.o sits in the map as a plain object. A target called app must not
+  // absorb it by name alone - that is what the .dir rule is for.
+  assert.deepStrictEqual(joinNames(model([['app', 'app.lib']])), []);
+});
+
+console.log('');
 console.log('--- tree ---');
 
 const provider = new MapTreeProvider();
