@@ -14,6 +14,7 @@ CMake 프로젝트의 링크 관계를 보여주는 VS Code 익스텐션. 순수
 | `src/fileApi.js` | CMake File API 읽기 → 타겟 모델 |
 | `src/tree.js` | Targets 트리뷰 |
 | `src/mapFile.js` | 링커 맵 파서 (GNU ld / ld64) |
+| `src/demangle.js` | 내장 C++ 디맹글러 (Itanium 부분집합, 모르면 거절) |
 | `src/mapTree.js` | Linker Map 트리뷰 + diff |
 | `src/includeResolver.js` | `#include` → 링크할 타겟 판정 |
 | `src/cmakeEdit.js` | CMakeLists.txt 최소 편집 (append만) |
@@ -59,12 +60,15 @@ configure한 것(`foo.lib`, `foo.dll`)일 수 있다.
 
 ### 현재 남아 있는 OS 의존성
 
-- **크로스 OS 조인 실패** (위 항목). 가장 실질적인 문제.
-- `demanglerCommand` 기본값이 `c++filt`다. 윈도우에 없다. 리눅스에서 만든 맵의
-  GCC 심볼을 윈도우에서 풀어야 하므로 실제로 걸린다. 툴체인의
-  `arm-none-eabi-c++filt` 등을 설정하거나 기본값 탐색을 넓혀야 한다.
+- ~~크로스 OS 조인 실패~~ — 해결됨. `matchTargets`가 정확 일치 실패 시에만
+  `lib` 접두사와 확장자를 벗긴 어간으로 비교한다.
+- ~~`c++filt`가 윈도우에 없다~~ — 해결됨. `src/demangle.js`가 대신 받는다.
+  **읽을 가치가 있는 형태만 다루고 템플릿·ABI 태그는 일부러 거절한다.**
+  거절할 때는 맹글링된 이름을 그대로 둔다. 이 엄격함을 완화하지 말 것 —
+  추측해서 조용히 틀린 이름을 보여주는 게 미지원보다 나쁘다.
 - `test/make-fixture.py`가 산출물 이름을 `lib{}.dylib` / `lib{}.a`로 하드코딩한다.
   조인 테스트가 이 픽스처를 쓰므로 윈도우/리눅스 이름 조합은 검증되지 않는다.
+  (크로스 OS 조인 자체는 `--- joining across platforms ---` 절이 따로 덮는다.)
 - `mapFile.detectFormat`은 GNU ld와 Apple ld64만 인식한다. 제품 빌드가 리눅스
   GNU ld이므로 **현재 용도에서는 문제가 되지 않는다.** MSVC로 빌드할 일이
   생기면 그때 다시 본다.

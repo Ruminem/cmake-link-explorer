@@ -263,7 +263,26 @@ std::__1::__introsort<std::__1::_ClassicAlgPolicy, ...>(...)
 ```
 
 툴체인이 다르면 `demanglerCommand`를 바꾸면 된다 (`arm-none-eabi-c++filt` 등).
-디맹글러가 없으면 조용히 원래 이름을 쓴다.
+
+`c++filt`가 없으면 **내장 디맹글러**가 대신 받는다. 윈도우에는 보통 `c++filt`가
+없는데(Git for Windows도 번들하지 않는다) 맵은 리눅스 빌드에서 나오므로, 그쪽에서는
+이게 기본 경로다.
+
+내장 쪽은 **읽을 가치가 있는 형태만** 다룬다. 네임스페이스 함수, 멤버 함수,
+생성자·소멸자, 연산자, 기본 타입과 포인터·레퍼런스, 백레퍼런스까지다.
+템플릿과 ABI 태그는 **일부러 거절하고 원래 이름을 그대로 둔다.**
+
+```
+__ZN11log_wrapper3LogEPKcS1_   →  log_wrapper::Log(char const*, char const*)
+__ZN4TileaSERKS_               →  Tile::operator=(Tile const&)
+__ZNKSt3__110unique_ptrINS_... →  (그대로)
+```
+
+거절이 손해가 아닌 이유는 커밋된 맵에서 세어보면 나온다. 맹글링 심볼 503개 중
+489개가 libc++ 내부이고, 그건 풀어도 200자짜리 템플릿이라 아무도 안 읽는다.
+실제로 읽는 14개는 전부 위 부분집합 안에 있다. 나머지를 추측해서 조용히 틀린
+이름을 보여주느니 맹글링된 채로 두는 게 낫다 — lld 맵 포맷을 넣지 않은 것과
+같은 이유다.
 
 ## Diff
 
@@ -340,7 +359,7 @@ cat /tmp/it.log
 | `test/sample-project` (실제 CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 16 checks |
-| 맵 파서 + 맵 트리 + 타겟 조인 | 49 checks |
+| 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 62 checks |
 | include → 링크 해결 + CMakeLists 편집 | 30 checks |
 | VS Code 확장 호스트 (1.136) | 35 checks |
 

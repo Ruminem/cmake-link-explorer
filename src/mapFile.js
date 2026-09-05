@@ -11,6 +11,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { demangleName } = require('./demangle');
 
 const HEX = '0x[0-9a-fA-F]+';
 
@@ -343,11 +344,12 @@ function summarise(model) {
 // A real map can carry hundreds of thousands of symbols, and demangling all of
 // them blocks for about a second. Only the largest ones are ever shown, so
 // `limit` keeps the work proportional to what is on screen.
-function demangle(model, command, limit) {
-  const chosen = limit ? largestSymbols(model, limit) : model.symbols;
-  const names = chosen.map((s) => s.name);
-  if (!names.length) return model;
-
+// Hands the names to c++filt when it is there, and falls back to src/demangle.js
+// for whatever comes back untouched. On Windows there is usually no c++filt at
+// all -- and the maps being read there came off a Linux build -- so the fallback
+// is the normal path rather than an edge case. It only claims the shapes it is
+// sure of, so anything it declines keeps its mangled name.
+function runDemangler(names, command) {
   let result;
   try {
     result = require('child_process').spawnSync(command || 'c++filt', ['--no-strip-underscore'], {
@@ -357,20 +359,29 @@ function demangle(model, command, limit) {
       timeout: 10000
     });
   } catch (e) {
-    return model;
+    return null;
   }
   if (!result || result.error || result.status !== 0 || typeof result.stdout !== 'string') {
-    return model;
+    return null;
   }
-
   const out = result.stdout.split('\n');
-  if (out.length < names.length) return model;
+  return out.length < names.length ? null : out;
+}
+
+function demangle(model, command, limit) {
+  const chosen = limit ? largestSymbols(model, limit) : model.symbols;
+  if (!chosen.length) return model;
+
+  const external = runDemangler(chosen.map((s) => s.name), command);
+
   chosen.forEach((symbol, index) => {
-    const value = (out[index] || '').trim();
+    const fromTool = external ? (external[index] || '').trim() : '';
+    let value = fromTool && fromTool !== symbol.name ? fromTool : '';
+    if (!value) value = demangleName(symbol.name) || '';
     // Mach-O prefixes every symbol with an underscore, which c++filt leaves in
-    // place; strip it only when demangling did not already happen.
-    const cleaned = value === symbol.name && /^_[A-Za-z]/.test(value) ? value.slice(1) : value;
-    if (cleaned && cleaned !== symbol.name) symbol.display = cleaned;
+    // place; strip it only when demangling did not happen at all.
+    if (!value && /^_[A-Za-z]/.test(symbol.name)) value = symbol.name.slice(1);
+    if (value && value !== symbol.name) symbol.display = value;
   });
   return model;
 }

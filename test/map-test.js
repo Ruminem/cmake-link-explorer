@@ -256,24 +256,98 @@ check('the total matches the sum of symbol sizes', () => {
   assert.strictEqual(ld64.totals.total, 45117);
 });
 
-check('C++ names demangle when a demangler is available', () => {
+check('C++ names demangle with no external tool at all', () => {
+  const model = mapFile.parseFile(fixture('ld64-O0'));
+  mapFile.demangle(model, 'definitely-not-a-real-demangler-xyz');
+  const shown = new Map(model.symbols.filter((s) => s.display).map((s) => [s.name, s.display]));
+  assert.strictEqual(shown.get('__Z4loadi'), 'load(int)');
+  assert.strictEqual(shown.get('__ZN4TileD1Ev'), 'Tile::~Tile()');
+  assert.strictEqual(shown.get('__ZN4TileaSERKS_'), 'Tile::operator=(Tile const&)');
+});
+
+check('a missing demangler is not an error, and nothing is guessed at', () => {
+  const model = mapFile.parseFile(fixture('ld64-O0'));
+  mapFile.demangle(model, 'definitely-not-a-real-demangler-xyz');
+  assert.strictEqual(model.symbols.length, 661);
+  // The built-in demangler declines libc++ templates instead of half-reading
+  // them, so those keep the name the map gave.
+  const templates = model.symbols.filter((s) => /St3__1/.test(s.name));
+  assert.ok(templates.length > 100, 'the fixture should be full of libc++ symbols');
+  assert.ok(templates.every((s) => !s.display), 'a template symbol was guessed at');
+});
+
+check('a real c++filt still wins when one is installed', () => {
   const model = mapFile.parseFile(fixture('ld64-O0'));
   mapFile.demangle(model);
-  const demangled = model.symbols.filter((s) => s.display);
-  if (!demangled.length) {
+  // Only a full demangler resolves libc++ templates, so their presence is how
+  // we know the external tool actually ran.
+  if (!model.symbols.some((s) => s.display && s.display.indexOf('std::__1::') !== -1)) {
     console.log('        (skipped: no working c++filt on this machine)');
     return;
   }
-  assert.ok(model.symbols.some((s) => s.display === 'load(int)'),
-            'load(int) was not demangled');
-  assert.ok(demangled.length > 100, 'only ' + demangled.length + ' symbols demangled');
+  assert.ok(model.symbols.filter((s) => s.display).length > 100);
+  assert.ok(model.symbols.some((s) => s.display === 'load(int)'));
 });
 
-check('demangling survives a missing demangler', () => {
-  const model = mapFile.parseFile(fixture('ld64-O0'));
-  mapFile.demangle(model, 'definitely-not-a-real-demangler-xyz');
-  assert.strictEqual(model.symbols.filter((s) => s.display).length, 0);
-  assert.strictEqual(model.symbols.length, 661);
+console.log('');
+console.log('--- the built-in demangler ---');
+
+const { demangleName } = require('../src/demangle');
+
+check('the shapes people actually read are handled', () => {
+  const cases = {
+    '_Z8describev': 'describe()',
+    '_Z4loadi': 'load(int)',
+    '_ZN6engine4LoadEPKc': 'engine::Load(char const*)',
+    '_ZN10math_utils7ProjectEdd': 'math_utils::Project(double, double)',
+    '_ZN12store_readerL7g_tilesE': 'store_reader::g_tiles',
+    '_ZN4TileC1Ev': 'Tile::Tile()',
+    '_ZN4TileD1Ev': 'Tile::~Tile()',
+    '_ZNK4Tile4sizeEv': 'Tile::size() const'
+  };
+  for (const [mangled, expected] of Object.entries(cases)) {
+    assert.strictEqual(demangleName(mangled), expected, mangled);
+  }
+});
+
+check('back-references are resolved', () => {
+  // S1_ is the third candidate: log_wrapper, char const, char const*.
+  assert.strictEqual(demangleName('_ZN11log_wrapper3LogEPKcS1_'),
+                     'log_wrapper::Log(char const*, char const*)');
+  // S_ is the class itself.
+  assert.strictEqual(demangleName('_ZN4TileaSERKS_'), 'Tile::operator=(Tile const&)');
+});
+
+check('operators and special names come out readable', () => {
+  assert.strictEqual(demangleName('_Znwm'), 'operator new(unsigned long)');
+  assert.strictEqual(demangleName('_ZdlPv'), 'operator delete(void*)');
+  assert.strictEqual(demangleName('_ZdlPvSt11align_val_t'),
+                     'operator delete(void*, std::align_val_t)');
+  assert.strictEqual(demangleName('_ZTISt12length_error'), 'typeinfo for std::length_error');
+  assert.strictEqual(demangleName('_ZTVSt12length_error'), 'vtable for std::length_error');
+});
+
+check("Mach-O's extra underscore is not mistaken for part of the name", () => {
+  assert.strictEqual(demangleName('__ZN6engine4LoadEPKc'), 'engine::Load(char const*)');
+});
+
+check('anything outside the subset is declined rather than guessed at', () => {
+  const declined = [
+    // a libc++ template with an ABI tag - the shape this deliberately skips
+    '_ZNKSt3__110unique_ptrINS_11__tree_nodeINS_12__value_typeIi4TileEEPvEEE3getB9nqe210106Ev',
+    '_Z3fooIiEvT_',        // template parameter
+    '_ZN4TileB5cxx11Ev',   // ABI tag
+    '_ZN4Tile',            // truncated: no closing E
+    '_ZN4Tile99xE',        // a length that runs off the end
+    '_Zzzz',               // not a shape we know
+    'main',                // never mangled to begin with
+    '_main',
+    ''
+  ];
+  for (const mangled of declined) {
+    assert.strictEqual(demangleName(mangled), null, mangled + ' should have been declined');
+  }
+  assert.strictEqual(demangleName(null), null);
 });
 
 console.log('');
