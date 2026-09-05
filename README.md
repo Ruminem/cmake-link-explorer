@@ -36,7 +36,28 @@ flowchart LR
 
 # 설치
 
-빌드도 패키징도 의존성도 없다. 순수 JavaScript라 클론해서 링크만 걸면 끝이다.
+빌드도 의존성도 없다. 순수 JavaScript다.
+
+## VSIX로 설치 (권장)
+
+[Releases](https://github.com/Ruminem/cmake-link-explorer/releases)에서 `.vsix`를 받아
+확장 탭의 `...` → **VSIX에서 설치**를 누르거나, 명령줄로:
+
+```
+code --install-extension cmake-link-explorer-0.1.0.vsix
+```
+
+직접 만들려면 저장소에서 (Node가 필요하고, 확장 자체는 여전히 의존성이 없다):
+
+```
+npx @vscode/vsce package
+```
+
+## 클론해서 링크 걸기
+
+고쳐가며 쓸 거면 이쪽이 편하다. `git pull` 하고 VS Code만 다시 켜면 반영된다.
+
+**macOS / Linux**
 
 ```
 git clone https://github.com/Ruminem/cmake-link-explorer.git ~/cmake-link-explorer
@@ -44,20 +65,28 @@ mkdir -p ~/.vscode/extensions
 ln -s ~/cmake-link-explorer ~/.vscode/extensions/cmake-link-explorer
 ```
 
-VS Code를 **완전히 종료했다가** 다시 켠다. 확인:
+**Windows** — 심볼릭 링크는 권한이 필요할 수 있어 정션(`/J`)을 쓴다.
 
 ```
-code --list-extensions | grep cmake-link
+git clone https://github.com/Ruminem/cmake-link-explorer.git C:\dev\cmake-link-explorer
+mkdir "%USERPROFILE%\.vscode\extensions"
+mklink /J "%USERPROFILE%\.vscode\extensions\cmake-link-explorer" "C:\dev\cmake-link-explorer"
+```
+
+## 확인
+
+VS Code를 **완전히 종료했다가** 다시 켠다.
+
+```
+code --list-extensions | grep cmake-link          # macOS / Linux
+code --list-extensions | Select-String cmake-link # Windows PowerShell
 ```
 
 `local.cmake-link-explorer` 가 뜨면 설치된 것이다. 테마나 아이콘 확장을 깐 것과
-같은 상태이고, **클론한 폴더를 VS Code로 열어둘 필요는 없다.** 링크가 그 경로를
-가리키므로 폴더를 옮기거나 지우지만 않으면 된다.
+같은 상태이고, **클론한 폴더를 VS Code로 열어둘 필요는 없다.**
 
 그다음부터는 CMake 프로젝트를 열거나 C/C++ 파일을 여는 것만으로 켜진다.
 아이콘을 누를 필요도 없다.
-
-업데이트는 `git pull` 하고 VS Code를 다시 켠다.
 
 빌드 디렉토리는 `CMakeCache.txt`를 찾아 자동 탐지한다(3단계 깊이까지).
 맵 파일도 빌드 디렉토리에서 `*.map`을 찾아 목록으로 띄운다.
@@ -549,6 +578,16 @@ DIFF
 ./test/bootstrap.sh
 ```
 
+**Windows에는 sh 스크립트가 없으니** 안에서 하는 일을 직접 부른다. 합성 픽스처는
+Python만 있으면 되고, 실제 빌드 트리 부분은 `cmake`가 있을 때만 의미가 있다.
+
+```
+python test\make-fixture.py
+```
+
+`python3`가 아니라 `python`이다. 윈도우의 `python3`는 실제 인터프리터가 아니라
+Microsoft Store 스텁으로 연결되는 경우가 많다.
+
 그다음:
 
 ```
@@ -563,16 +602,36 @@ node test/include-test.js                         include -> 링크 해결 + CMa
 
 실제 VS Code 확장 호스트 안에서 (활성화, 명령 등록, 트리, 에디터 점프, 맵 탭):
 
+**macOS**
+
 ```
 CMAKE_LINK_TEST_LOG=/tmp/it.log \
 "/Applications/Visual Studio Code.app/Contents/MacOS/Code" \
+  --user-data-dir=/tmp/clx-ud --extensions-dir=/tmp/clx-ext \
   --extensionDevelopmentPath="$PWD" \
   --extensionTestsPath="$PWD/test/integration" \
   --disable-extensions "$PWD/test/sample-project"
 cat /tmp/it.log
 ```
 
+**Windows (PowerShell)**
+
+```
+$env:CMAKE_LINK_TEST_LOG = "$env:TEMP\it.log"
+& "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe" `
+  --user-data-dir="$env:TEMP\clx-ud" --extensions-dir="$env:TEMP\clx-ext" `
+  --extensionDevelopmentPath="$PWD" `
+  --extensionTestsPath="$PWD\test\integration" `
+  --disable-extensions "$PWD\test\sample-project"
+Get-Content "$env:TEMP\it.log"
+```
+
 확장 호스트는 stdout으로 로그를 넘기지 않으므로 `CMAKE_LINK_TEST_LOG`로 받는다.
+
+`--user-data-dir`과 `--extensions-dir`로 별도 프로필을 쓰는 것이 중요하다. 없으면
+**VS Code가 이미 켜져 있을 때 `Running extension tests from the command line is
+currently only supported if no other instance of Code is running` 로 거부당한다.**
+별도 프로필이면 평소 쓰던 창을 닫지 않아도 된다.
 
 `test/maps/`의 맵 파일은 진짜 링커가 만든 것이고 커밋돼 있어서, 툴체인 없이도
 테스트가 돈다. 다시 만들려면 `test/mapgen/generate.sh` (GNU ld 부분은
@@ -588,7 +647,7 @@ cat /tmp/it.log
 | 타겟 트리 렌더링 | 16 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 62 checks |
 | include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 40 checks |
-| VS Code 확장 호스트 (1.136) | 35 checks |
+| VS Code 확장 호스트 (1.136, macOS + Windows) | 35 checks |
 
 # 성능
 
