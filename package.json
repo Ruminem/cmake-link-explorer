@@ -123,6 +123,12 @@
         "icon": "$(settings)"
       },
       {
+        "command": "cmakeLinkExplorer.projectHealth",
+        "title": "Find Cycles and Unused Targets",
+        "category": "CMake Links",
+        "icon": "$(warning)"
+      },
+      {
         "command": "cmakeLinkExplorer.applyLinkForInclude",
         "title": "Link The Library For This Include",
         "category": "CMake Links"

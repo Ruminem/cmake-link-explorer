@@ -8,6 +8,7 @@ CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 
 | **Targets** | 무엇이 무엇을 링크하나, 특히 **누가 이걸 링크하나** | 구조 파악, 영향 범위 |
 | **Linker Map** | **뭐가 용량을 먹나**, 지난 빌드 대비 뭐가 늘었나 | 바이너리가 커졌을 때 |
 | **Compiled With** | 이 파일의 **실효 매크로와 include 경로** | `#ifdef`가 안 잡힐 때 |
+| **Cycles / Unused** | **순환 링크와 아무도 안 쓰는 라이브러리** | 구조 정리할 때 |
 
 # 설치
 
@@ -258,6 +259,48 @@ add_module(sensor)                     # 사람이 쓴 줄
 
 ---
 
+# Find Cycles and Unused Targets
+
+링크 그래프가 자기 자신에 대해 답할 수 있는 두 가지다.
+
+```
+cycles (1)
+    a → b → c → a
+      a links b    libs/a/CMakeLists.txt:6
+      b links c    libs/b/CMakeLists.txt:4
+      c links a    libs/c/CMakeLists.txt:5
+
+unused libraries (1)
+    legacy_parser  [static]    libs/legacy_parser/CMakeLists.txt:1
+```
+
+## 순환은 `dependencies`에 안 보인다
+
+CMake는 **정적 라이브러리끼리의 순환을 허용한다.** 링크 줄에 아카이브를 반복해서
+넣어 해결하므로 configure도 빌드도 통과한다. 그래서 모르고 지나가기 쉽다.
+
+문제는 File API의 `dependencies`가 **빌드 순서**라는 것이다. 순서에 순환이 있을 수
+없으니 CMake가 **순환을 닫는 간선을 빼고** 준다. `c`가 `a`를 링크해도
+`c.dependencies`는 비어서 온다.
+
+그래서 이 검사는 `linkLibraries`(쓰여진 그대로의 링크 목록)를 읽는다. 구형
+코드모델에는 그 필드가 없는데, 그럴 땐 **"없음"이 아니라 "판단 불가"라고 말한다.**
+볼 수 없는 것을 없다고 하면 안 되니까. (간선이 아예 하나도 없는 프로젝트는 예외로,
+그땐 순환이 있을 수 없으므로 "없음"이라고 답한다.)
+
+## 미사용 판정에서 빼는 것
+
+아무도 안 링크한다고 다 군더더기는 아니다.
+
+| 제외 | 이유 |
+|---|---|
+| 실행 파일 | 진입점이다. 아무도 안 링크하는 게 정상 |
+| `install()`된 라이브러리 | 그게 배포물이다. 외부에서 쓰라고 만든 것 |
+| MODULE 라이브러리 | 플러그인이라 링크가 아니라 `dlopen`으로 쓴다 |
+| UTILITY 타겟 | 애초에 링크 대상이 아니다 |
+
+---
+
 # Linker Map
 
 ```
@@ -408,7 +451,7 @@ cat /tmp/it.log
 
 | 대상 | |
 |---|---|
-| 합성 File API 픽스처 + backtrace 위치 | 25 checks |
+| 합성 File API 픽스처 + backtrace + 순환/미사용 | 33 checks |
 | `test/sample-project` (실제 CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 16 checks |
@@ -465,5 +508,7 @@ CMakeLists.txt로 측정한 값이다.
 # 앞으로
 
 - LLVM lld 맵 포맷 (실물 샘플이 생기면)
+- MSVC `link.exe /MAP` 포맷 (마찬가지로 실물 샘플이 생기면)
 - 그래프 뷰 (웹뷰 + 노드 드래그)
-- 순환 의존 / 미사용 타겟 표시
+- 윈도우 빌드 트리와 리눅스 빌드 트리 비교 — 타겟·매크로·include가 어긋난 곳을
+  빌드 전에 짚어준다

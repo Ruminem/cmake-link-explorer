@@ -296,5 +296,115 @@ console.log('--- where CMake says a target came from ---');
 }
 
 console.log('');
+console.log('--- cycles and unused targets ---');
+
+// Spelled out rather than configured, so these run without CMake. `links` is
+// the link line as written; `deps` is the build order CMake derives from it,
+// which is where the edge closing a cycle goes missing.
+function graph(rows, options) {
+  const targets = new Map();
+  for (const row of rows) {
+    targets.set(row.name, {
+      id: row.name, name: row.name, type: row.type || 'STATIC_LIBRARY',
+      linkTargetIds: row.links || [],
+      directDependencyIds: row.deps || row.links || [],
+      dependencyIds: row.deps || row.links || [],
+      isInstalled: !!row.installed
+    });
+  }
+  const linkedBy = new Map();
+  for (const id of targets.keys()) linkedBy.set(id, []);
+  for (const target of targets.values()) {
+    for (const id of target.directDependencyIds) {
+      if (linkedBy.has(id)) linkedBy.get(id).push(target.id);
+    }
+  }
+  return {
+    targets, linkedBy,
+    hasLinkGraph: !options || options.hasLinkGraph !== false
+  };
+}
+
+check('a cycle is reported as a walkable chain', () => {
+  const model = graph([
+    { name: 'a', links: ['b'] },
+    { name: 'b', links: ['c'] },
+    { name: 'c', links: ['a'] },
+    { name: 'app', type: 'EXECUTABLE', links: ['a'] }
+  ]);
+  const cycles = fileApi.findCycles(model);
+  assert.strictEqual(cycles.length, 1);
+  // Any rotation is correct as long as each step really links the next one.
+  const names = cycles[0];
+  assert.deepStrictEqual([...names].sort(), ['a', 'b', 'c']);
+  for (let i = 0; i < names.length; i++) {
+    const from = model.targets.get(names[i]);
+    assert.ok(from.linkTargetIds.indexOf(names[(i + 1) % names.length]) !== -1,
+              names[i] + ' does not link ' + names[(i + 1) % names.length]);
+  }
+});
+
+check('an acyclic graph reports nothing', () => {
+  assert.deepStrictEqual(fileApi.findCycles(graph([
+    { name: 'app', type: 'EXECUTABLE', links: ['a'] },
+    { name: 'a', links: ['b'] },
+    { name: 'b', links: [] }
+  ])), []);
+});
+
+check('two separate cycles are both found', () => {
+  const cycles = fileApi.findCycles(graph([
+    { name: 'a', links: ['b'] }, { name: 'b', links: ['a'] },
+    { name: 'x', links: ['y'] }, { name: 'y', links: ['x'] },
+    { name: 'lonely', links: [] }
+  ]));
+  assert.strictEqual(cycles.length, 2);
+  assert.deepStrictEqual(cycles.map((c) => c.slice().sort().join('')).sort(), ['ab', 'xy']);
+});
+
+check('a target linking itself counts', () => {
+  const cycles = fileApi.findCycles(graph([{ name: 'a', links: ['a'] }]));
+  assert.deepStrictEqual(cycles, [['a']]);
+});
+
+check('an older codemodel says it cannot tell rather than "none"', () => {
+  // CMake drops the closing edge from the build order, so a graph that has
+  // edges but no link lists genuinely cannot be judged.
+  const model = graph([{ name: 'a', deps: ['b'] }, { name: 'b', deps: [] }],
+                      { hasLinkGraph: false });
+  assert.strictEqual(fileApi.findCycles(model), null);
+});
+
+check('a project with no edges at all is answerable either way', () => {
+  const model = graph([{ name: 'a', links: [] }, { name: 'b', links: [] }],
+                      { hasLinkGraph: false });
+  assert.deepStrictEqual(fileApi.findCycles(model), []);
+});
+
+check('only libraries nothing needs are called unused', () => {
+  const model = graph([
+    { name: 'app', type: 'EXECUTABLE', links: ['used'] },
+    { name: 'used', links: [] },
+    { name: 'orphan', links: [] },
+    { name: 'shipped', links: [], installed: true },
+    { name: 'plugin', type: 'MODULE_LIBRARY', links: [] },
+    { name: 'docs', type: 'UTILITY', links: [] }
+  ]);
+  // app is an entry point, used is linked, shipped is the deliverable, a plugin
+  // is dlopened rather than linked, and a utility target builds nothing.
+  assert.deepStrictEqual(fileApi.findUnusedTargets(model).map((t) => t.name), ['orphan']);
+});
+
+check('a library reachable only through the link line is not called unused', () => {
+  // The cycle edge lives in linkTargetIds and nowhere else; missing it would
+  // report a library that something plainly links.
+  const model = graph([
+    { name: 'a', links: ['b'], deps: ['b'] },
+    { name: 'b', links: ['a'], deps: [] }
+  ]);
+  assert.deepStrictEqual(fileApi.findUnusedTargets(model).map((t) => t.name), []);
+});
+
+console.log('');
 console.log(failures === 0 ? 'all checks passed' : failures + ' check(s) failed');
 process.exit(failures === 0 ? 0 : 1);

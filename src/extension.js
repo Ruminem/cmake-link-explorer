@@ -61,6 +61,7 @@ function activate(context) {
   register('cmakeLinkExplorer.closeMap', closeMap);
   register('cmakeLinkExplorer.linkForInclude', linkForInclude);
   register('cmakeLinkExplorer.compileSettings', compileSettings);
+  register('cmakeLinkExplorer.projectHealth', projectHealth);
   register('cmakeLinkExplorer.applyLinkForInclude', reportInclude);
 
   context.subscriptions.push(
@@ -435,6 +436,64 @@ class LinkIncludeActionProvider {
     };
     action.isPreferred = direct;
     return [action];
+  }
+}
+
+// Two questions a link graph can answer about itself: what loops, and what
+// nothing needs.
+async function projectHealth() {
+  if (!provider.model) {
+    vscode.window.showInformationMessage('No CMake targets loaded.');
+    return;
+  }
+  const model = provider.model;
+  const name = (id) => (model.targets.get(id) || {}).name || id;
+
+  output.clear();
+  output.show(true);
+
+  const cycles = fileApi.findCycles(model);
+  if (cycles === null) {
+    // Saying "no cycles" here would be a claim this codemodel cannot support.
+    output.appendLine('cycles: cannot tell from this codemodel.');
+    output.appendLine('  CMake drops the edge that closes a cycle from its dependency');
+    output.appendLine('  graph, and this reply does not carry the link lists that keep it.');
+    output.appendLine('  A newer CMake writes them; re-run the configure with one to check.');
+  } else if (!cycles.length) {
+    output.appendLine('cycles: none.');
+  } else {
+    output.appendLine('cycles (' + cycles.length + ')');
+    output.appendLine('  CMake allows these between static libraries and repeats the archives');
+    output.appendLine('  on the link line, so they build. They still make the structure much');
+    output.appendLine('  harder to follow than the tree suggests.');
+    for (const cycle of cycles) {
+      output.appendLine('');
+      output.appendLine('    ' + cycle.map(name).join(' → ') + ' → ' + name(cycle[0]));
+      for (let i = 0; i < cycle.length; i++) {
+        const from = model.targets.get(cycle[i]);
+        const toId = cycle[(i + 1) % cycle.length];
+        const site = from.dependencySites && from.dependencySites.get(toId);
+        output.appendLine('      ' + from.name + ' links ' + name(toId) +
+                          (site ? '    ' + site.file + ':' + site.line : ''));
+      }
+    }
+  }
+
+  const unused = fileApi.findUnusedTargets(model);
+  output.appendLine('');
+  if (!unused.length) {
+    output.appendLine('unused libraries: none.');
+  } else {
+    output.appendLine('unused libraries (' + unused.length + ')');
+    output.appendLine('  Nothing in this project links them, and they are not installed.');
+    output.appendLine('  Executables, utility targets and plugins are not counted.');
+    output.appendLine('');
+    for (const target of unused) {
+      output.appendLine('    ' + target.name +
+                        '  [' + (SHORT_TYPE[target.type] || target.type) + ']' +
+                        (target.declaration
+                          ? '    ' + target.declaration.file + ':' + target.declaration.line : ''));
+    }
   }
 }
 

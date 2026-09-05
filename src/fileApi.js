@@ -23,6 +23,16 @@ const LINKABLE_TYPES = new Set([
   'INTERFACE_LIBRARY'
 ]);
 
+// Everything above except the entry points. An executable that nothing links is
+// the normal case, not a finding. MODULE_LIBRARY is a plugin: it is dlopened
+// rather than linked, so nothing naming it is equally normal.
+const LIBRARY_TYPES = new Set([
+  'STATIC_LIBRARY',
+  'SHARED_LIBRARY',
+  'OBJECT_LIBRARY',
+  'INTERFACE_LIBRARY'
+]);
+
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
@@ -277,10 +287,14 @@ function compileGroupsOf(target) {
 
 function dependencySites(target, graph) {
   const sites = new Map();
-  for (const dependency of target.dependencies || []) {
-    if (!dependency || !dependency.id) continue;
-    const chain = backtraceChain(graph, dependency.backtrace);
-    if (chain.length) sites.set(dependency.id, chain[chain.length - 1]);
+  // linkLibraries first: it is the link line as written, so it carries the edge
+  // that closes a cycle, which `dependencies` drops to keep a build order.
+  for (const list of [target.linkLibraries, target.dependencies]) {
+    for (const entry of list || []) {
+      if (!entry || !entry.id || sites.has(entry.id)) continue;
+      const chain = backtraceChain(graph, entry.backtrace);
+      if (chain.length) sites.set(entry.id, chain[chain.length - 1]);
+    }
   }
   return sites;
 }
@@ -329,6 +343,14 @@ function loadModel(buildDir, wantedConfiguration) {
       dependencySites: dependencySites(target, target.backtraceGraph),
       // Effective macros and include paths, per language group.
       compileGroups: compileGroupsOf(target),
+      // The link edges as written. `dependencies` is a build order, so CMake
+      // drops whichever edge closes a cycle -- c linking a comes back empty
+      // there while it is still here. Older codemodels omit the field, which is
+      // why the model records whether it saw one at all.
+      linkTargetIds: Array.isArray(target.linkLibraries)
+        ? target.linkLibraries.map((l) => l && l.id).filter(Boolean) : null,
+      // An installed library is the deliverable; nothing linking it is normal.
+      isInstalled: !!(target.install && (target.install.destinations || []).length),
       // Relative to the source root, e.g. "libs/engine".
       sourceDir: (target.paths && target.paths.source) || '',
       dependencyIds: (target.dependencies || []).map((d) => d.id),
@@ -352,6 +374,17 @@ function loadModel(buildDir, wantedConfiguration) {
     target.dependencyIds = target.dependencyIds.filter((id) => targets.has(id));
   }
 
+  // A target that links nothing omits the field entirely, so "every target has
+  // one" is never true. One target having it is what says the codemodel is new
+  // enough to be carrying them at all; an older reply has none anywhere, and
+  // the cycle check then reports that it cannot tell rather than "no cycles".
+  const hasLinkGraph = Array.from(targets.values())
+    .some((t) => Array.isArray(t.linkTargetIds));
+  for (const target of targets.values()) {
+    target.linkTargetIds = Array.isArray(target.linkTargetIds)
+      ? target.linkTargetIds.filter((id) => targets.has(id)) : [];
+  }
+
   computeDirectDependencies(targets);
 
   // Built from direct edges so "linked by" names the targets that actually
@@ -370,8 +403,141 @@ function loadModel(buildDir, wantedConfiguration) {
     configuration: configuration.name,
     configurations: configurations.map((c) => c.name),
     targets: targets,
-    linkedBy: linkedBy
+    linkedBy: linkedBy,
+    hasLinkGraph: hasLinkGraph
   };
+}
+
+/**
+ * Cycles in the link graph.
+ *
+ * Has to read `linkTargetIds` rather than the dependency graph: CMake builds
+ * `dependencies` as a build order, so the edge that closes a cycle is simply
+ * absent there. CMake allows cycles between static libraries and resolves them
+ * by repeating the archives on the link line, so they configure and build --
+ * they just make the structure much harder to reason about than it looks.
+ *
+ * Tarjan, with an explicit stack: a project with a few thousand targets would
+ * otherwise recurse as deep as it has targets.
+ *
+ * @returns {Array<string[]>|null} one entry per cycle, or null when this
+ *          codemodel does not carry the link lists to tell either way
+ */
+function findCycles(model) {
+  if (!model.hasLinkGraph) {
+    // Without the link lists the edge that closes a cycle is invisible, so the
+    // honest answer is "cannot tell" rather than "none". The exception is a
+    // project with no edges at all, where there is nothing to close.
+    const anyEdges = Array.from(model.targets.values())
+      .some((t) => t.directDependencyIds.length || t.dependencyIds.length);
+    return anyEdges ? null : [];
+  }
+
+  const index = new Map();
+  const low = new Map();
+  const onStack = new Set();
+  const stack = [];
+  const components = [];
+  let counter = 0;
+
+  for (const root of model.targets.keys()) {
+    if (index.has(root)) continue;
+    const work = [{ id: root, next: 0 }];
+
+    while (work.length) {
+      const frame = work[work.length - 1];
+      if (frame.next === 0) {
+        index.set(frame.id, counter);
+        low.set(frame.id, counter);
+        counter++;
+        stack.push(frame.id);
+        onStack.add(frame.id);
+      }
+
+      const edges = model.targets.get(frame.id).linkTargetIds;
+      if (frame.next < edges.length) {
+        const next = edges[frame.next++];
+        if (!index.has(next)) work.push({ id: next, next: 0 });
+        else if (onStack.has(next)) low.set(frame.id, Math.min(low.get(frame.id), index.get(next)));
+        continue;
+      }
+
+      if (low.get(frame.id) === index.get(frame.id)) {
+        const component = [];
+        for (;;) {
+          const id = stack.pop();
+          onStack.delete(id);
+          component.push(id);
+          if (id === frame.id) break;
+        }
+        // A component of one is a cycle only if the target links itself.
+        if (component.length > 1 ||
+            model.targets.get(frame.id).linkTargetIds.indexOf(frame.id) !== -1) {
+          components.push(component);
+        }
+      }
+
+      work.pop();
+      if (work.length) {
+        const parent = work[work.length - 1];
+        low.set(parent.id, Math.min(low.get(parent.id), low.get(frame.id)));
+      }
+    }
+  }
+
+  return components.map((component) => orderCycle(model, component));
+}
+
+// Tarjan hands back a set. Walking it into a path makes the report readable as
+// "a links b links c links a" rather than a bag of three names.
+function orderCycle(model, component) {
+  const members = new Set(component);
+  const start = component[component.length - 1];
+  const cameFrom = new Map([[start, null]]);
+  const queue = [start];
+
+  while (queue.length) {
+    const id = queue.shift();
+    for (const next of model.targets.get(id).linkTargetIds) {
+      if (!members.has(next)) continue;
+      if (next === start) {
+        const path = [id];
+        for (let at = cameFrom.get(id); at; at = cameFrom.get(at)) path.push(at);
+        path.reverse();
+        return path;
+      }
+      if (cameFrom.has(next)) continue;
+      cameFrom.set(next, id);
+      queue.push(next);
+    }
+  }
+  return component;
+}
+
+/**
+ * Libraries nothing links.
+ *
+ * Executables and utility targets are entry points, and an installed library is
+ * the deliverable, so none of those count. Incoming edges are taken from both
+ * the dependency graph and the link lists, because each misses something the
+ * other has.
+ */
+function findUnusedTargets(model) {
+  const linked = new Set();
+  for (const [id, sources] of model.linkedBy) {
+    if (sources.length) linked.add(id);
+  }
+  for (const target of model.targets.values()) {
+    for (const id of target.linkTargetIds || []) linked.add(id);
+  }
+
+  const unused = [];
+  for (const target of model.targets.values()) {
+    if (!LIBRARY_TYPES.has(target.type)) continue;
+    if (target.isInstalled || linked.has(target.id)) continue;
+    unused.push(target);
+  }
+  return unused;
 }
 
 function dedupe(items) {
@@ -421,6 +587,8 @@ module.exports = {
   findCodemodelFile,
   loadModel,
   backtraceChain,
+  findCycles,
+  findUnusedTargets,
   isLinkable,
   isLibraryFragment,
   reduceDependencies: computeDirectDependencies,
