@@ -1,3 +1,5 @@
+**한국어** · [English](README.en.md)
+
 # CMake Link Explorer
 
 CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 익스텐션.
@@ -391,8 +393,7 @@ flowchart TB
     written -->|"CMake가 c → a 를 빼고 준다"| deps
 ```
 
-왼쪽만 보면 순환이 보이고, 오른쪽만 보면 평범한 사슬로 보인다.
-그래서 이 검사는 `linkLibraries` 쪽을 읽는다.
+위만 보면 순환이 보이고, 아래만 보면 평범한 사슬로 보인다.
 
 그래서 이 검사는 `linkLibraries`(쓰여진 그대로의 링크 목록)를 읽는다. 구형
 코드모델에는 그 필드가 없는데, 그럴 땐 **"없음"이 아니라 "판단 불가"라고 말한다.**
