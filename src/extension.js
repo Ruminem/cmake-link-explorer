@@ -56,6 +56,15 @@ function activate(context) {
   );
 
   reload();
+
+  // Returned to VS Code as this extension's public API. Integration tests use it
+  // to inspect the loaded graph without going through the tree view UI.
+  return {
+    reload: reload,
+    getModel: () => provider.model,
+    getProvider: () => provider,
+    getBuildDirectory: () => currentBuildDir
+  };
 }
 
 function deactivate() {

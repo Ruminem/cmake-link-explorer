@@ -5,8 +5,12 @@
   "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",
-  "engines": { "vscode": "^1.75.0" },
-  "categories": ["Other"],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [],
   "main": "./src/extension.js",
   "contributes": {
@@ -35,25 +39,85 @@
       }
     ],
     "commands": [
-      { "command": "cmakeLinkExplorer.refresh", "title": "Refresh", "category": "CMake Links", "icon": "$(refresh)" },
-      { "command": "cmakeLinkExplorer.selectBuildDir", "title": "Select Build Directory", "category": "CMake Links", "icon": "$(folder-opened)" },
-      { "command": "cmakeLinkExplorer.search", "title": "Find Target", "category": "CMake Links", "icon": "$(search)" },
-      { "command": "cmakeLinkExplorer.whyLinked", "title": "Why Is This Linked? (trace path between two targets)", "category": "CMake Links" },
-      { "command": "cmakeLinkExplorer.configure", "title": "Run CMake Configure", "category": "CMake Links" },
-      { "command": "cmakeLinkExplorer.openCMakeLists", "title": "Open CMakeLists.txt", "category": "CMake Links", "icon": "$(go-to-file)" },
-      { "command": "cmakeLinkExplorer.copyName", "title": "Copy Target Name", "category": "CMake Links" }
+      {
+        "command": "cmakeLinkExplorer.refresh",
+        "title": "Refresh",
+        "category": "CMake Links",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "cmakeLinkExplorer.selectBuildDir",
+        "title": "Select Build Directory",
+        "category": "CMake Links",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "cmakeLinkExplorer.search",
+        "title": "Find Target",
+        "category": "CMake Links",
+        "icon": "$(search)"
+      },
+      {
+        "command": "cmakeLinkExplorer.whyLinked",
+        "title": "Why Is This Linked? (trace path between two targets)",
+        "category": "CMake Links"
+      },
+      {
+        "command": "cmakeLinkExplorer.configure",
+        "title": "Run CMake Configure",
+        "category": "CMake Links"
+      },
+      {
+        "command": "cmakeLinkExplorer.openCMakeLists",
+        "title": "Open CMakeLists.txt",
+        "category": "CMake Links",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "cmakeLinkExplorer.copyName",
+        "title": "Copy Target Name",
+        "category": "CMake Links"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "cmakeLinkExplorer.search", "when": "view == cmakeLinkExplorer.targets", "group": "navigation@1" },
-        { "command": "cmakeLinkExplorer.refresh", "when": "view == cmakeLinkExplorer.targets", "group": "navigation@2" },
-        { "command": "cmakeLinkExplorer.selectBuildDir", "when": "view == cmakeLinkExplorer.targets", "group": "navigation@3" },
-        { "command": "cmakeLinkExplorer.whyLinked", "when": "view == cmakeLinkExplorer.targets", "group": "1_actions" },
-        { "command": "cmakeLinkExplorer.configure", "when": "view == cmakeLinkExplorer.targets", "group": "1_actions" }
+        {
+          "command": "cmakeLinkExplorer.search",
+          "when": "view == cmakeLinkExplorer.targets",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cmakeLinkExplorer.refresh",
+          "when": "view == cmakeLinkExplorer.targets",
+          "group": "navigation@2"
+        },
+        {
+          "command": "cmakeLinkExplorer.selectBuildDir",
+          "when": "view == cmakeLinkExplorer.targets",
+          "group": "navigation@3"
+        },
+        {
+          "command": "cmakeLinkExplorer.whyLinked",
+          "when": "view == cmakeLinkExplorer.targets",
+          "group": "1_actions"
+        },
+        {
+          "command": "cmakeLinkExplorer.configure",
+          "when": "view == cmakeLinkExplorer.targets",
+          "group": "1_actions"
+        }
       ],
       "view/item/context": [
-        { "command": "cmakeLinkExplorer.openCMakeLists", "when": "view == cmakeLinkExplorer.targets && viewItem =~ /^target/", "group": "inline" },
-        { "command": "cmakeLinkExplorer.copyName", "when": "view == cmakeLinkExplorer.targets && viewItem =~ /^target/", "group": "1_copy" }
+        {
+          "command": "cmakeLinkExplorer.openCMakeLists",
+          "when": "view == cmakeLinkExplorer.targets && viewItem =~ /^target/",
+          "group": "inline"
+        },
+        {
+          "command": "cmakeLinkExplorer.copyName",
+          "when": "view == cmakeLinkExplorer.targets && viewItem =~ /^target/",
+          "group": "1_copy"
+        }
       ]
     },
     "configuration": {
@@ -78,6 +142,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show libraries that come from outside the project (system libs, frameworks, prebuilt .a/.so)."
+        },
+        "cmakeLinkExplorer.showTransitiveDependencies": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show every dependency CMake reports, including ones pulled in transitively. Off by default: the reduced graph matches what target_link_libraries actually declares."
         }
       }
     }

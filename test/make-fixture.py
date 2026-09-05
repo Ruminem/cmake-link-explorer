@@ -40,6 +40,20 @@ def target_id(name):
     return "{}::@6890427a1f51a3e7e1df".format(name)
 
 
+def transitive_closure(deps):
+    """CMake reports dependencies as the full build-order closure, not just the
+    libraries named in target_link_libraries. The fixture must do the same."""
+    direct = {t[0]: t[3] for t in TARGETS}
+    seen, stack = [], list(deps)
+    while stack:
+        item = stack.pop(0)
+        if item in seen:
+            continue
+        seen.append(item)
+        stack.extend(direct.get(item, []))
+    return seen
+
+
 def build_target(name, kind, subdir, deps, externals):
     data = {
         "name": name,
@@ -47,16 +61,17 @@ def build_target(name, kind, subdir, deps, externals):
         "type": kind,
         "paths": {"source": subdir, "build": subdir},
         "sources": [{"path": "{}/{}.cpp".format(subdir, name), "isGenerated": False}],
-        "dependencies": [{"id": target_id(d)} for d in deps],
+        "dependencies": [{"id": target_id(d), "backtrace": 2} for d in transitive_closure(deps)],
     }
     if kind in ON_DISK:
         data["nameOnDisk"] = ON_DISK[kind].format(name)
 
     if kind in ("EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"):
         fragments = []
-        # CMake lists project-built libraries on the link line too; the extension
-        # must recognise those and not report them as external.
-        for dep in deps:
+        # Observed from real CMake output: linker options show up under the
+        # "libraries" role, so the extension has to filter them out itself.
+        fragments.append({"fragment": '-Wl,-rpath,"{}/libs"'.format(BUILD), "role": "libraries"})
+        for dep in transitive_closure(deps):
             dep_kind = next(t[1] for t in TARGETS if t[0] == dep)
             if dep_kind in ON_DISK and dep_kind != "EXECUTABLE":
                 fragments.append({
@@ -66,7 +81,7 @@ def build_target(name, kind, subdir, deps, externals):
         for ext in externals:
             role = "frameworks" if ext.startswith("-framework") else "libraries"
             fragments.append({"fragment": ext, "role": role})
-        fragments.append({"fragment": "-Wl,-dead_strip", "role": "flags"})
+        fragments.append({"fragment": "-Wl,-search_paths_first", "role": "flags"})
         data["link"] = {"language": "CXX", "commandFragments": fragments}
     elif kind == "STATIC_LIBRARY":
         data["archive"] = {}

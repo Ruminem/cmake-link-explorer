@@ -115,6 +115,14 @@ function findCodemodelFile(buildDir) {
   return direct.length ? path.join(replyDir, direct[direct.length - 1]) : null;
 }
 
+// CMake files linker options under the "libraries" role as well, most visibly
+// -Wl,-rpath,... on macOS. Anything that starts with a dash and is not -l or
+// -framework is an option, not a library.
+function isLibraryFragment(text) {
+  if (text.charAt(0) !== '-') return true; // a path to a library file
+  return /^-l/.test(text) || /^-framework\b/.test(text);
+}
+
 // Pulls library names off the link line. Static libraries have no link step at all,
 // so they legitimately return nothing here.
 function linkLibraryFragments(target) {
@@ -124,9 +132,39 @@ function linkLibraryFragments(target) {
   for (const fragment of link.commandFragments) {
     if (fragment.role !== 'libraries' && fragment.role !== 'frameworks') continue;
     const text = (fragment.fragment || '').trim();
-    if (text) out.push(text);
+    if (text && isLibraryFragment(text)) out.push(text);
   }
   return out;
+}
+
+// CMake reports `dependencies` as the full build-order closure: an executable
+// lists every library it ends up linking, not the handful named in its own
+// target_link_libraries call. Reducing the graph to its minimal equivalent
+// recovers the structure that was actually written, which is the whole point of
+// the view -- otherwise every executable looks like it links everything.
+function computeDirectDependencies(targets) {
+  const reachableCache = new Map();
+
+  const reachableFrom = (id, visiting) => {
+    if (reachableCache.has(id)) return reachableCache.get(id);
+    if (visiting.has(id)) return new Set(); // defensive: dependency cycles
+    visiting.add(id);
+    const out = new Set();
+    for (const next of targets.get(id).dependencyIds) {
+      out.add(next);
+      for (const deep of reachableFrom(next, visiting)) out.add(deep);
+    }
+    visiting.delete(id);
+    reachableCache.set(id, out);
+    return out;
+  };
+
+  for (const target of targets.values()) {
+    const deps = target.dependencyIds;
+    target.directDependencyIds = deps.filter((candidate) =>
+      !deps.some((other) => other !== candidate && reachableFrom(other, new Set()).has(candidate))
+    );
+  }
 }
 
 // A link fragment can point at a library this project builds, in which case it
@@ -206,10 +244,14 @@ function loadModel(buildDir, wantedConfiguration) {
     target.dependencyIds = target.dependencyIds.filter((id) => targets.has(id));
   }
 
+  computeDirectDependencies(targets);
+
+  // Built from direct edges so "linked by" names the targets that actually
+  // declare the dependency, not every executable downstream of it.
   const linkedBy = new Map();
   for (const id of targets.keys()) linkedBy.set(id, []);
   for (const target of targets.values()) {
-    for (const depId of target.dependencyIds) {
+    for (const depId of target.directDependencyIds) {
       linkedBy.get(depId).push(target.id);
     }
   }
@@ -247,7 +289,7 @@ function findLinkPath(model, fromId, toId) {
 
   while (queue.length) {
     const current = queue.shift();
-    for (const next of model.targets.get(current).dependencyIds) {
+    for (const next of model.targets.get(current).directDependencyIds) {
       if (cameFrom.has(next)) continue;
       cameFrom.set(next, current);
       if (next === toId) {
@@ -271,5 +313,6 @@ module.exports = {
   findCodemodelFile,
   loadModel,
   isLinkable,
+  isLibraryFragment,
   findLinkPath
 };

@@ -1,7 +1,17 @@
 'use strict';
-// Renders the real TargetTreeProvider against the fixture, using a vscode shim.
+
+// Renders the real TargetTreeProvider against the fixture. src/tree.js requires
+// 'vscode', which only exists inside an extension host, so resolve it to the stub.
+const Module = require('module');
+const originalLoad = Module._load;
+Module._load = function (request, parent, isMain) {
+  if (request === 'vscode') return require('./vscode-stub');
+  return originalLoad.call(this, request, parent, isMain);
+};
+
 const path = require('path');
 const assert = require('assert');
+const vscodeStub = require('./vscode-stub');
 const fileApi = require('../src/fileApi');
 const { TargetTreeProvider } = require('../src/tree');
 
@@ -75,12 +85,30 @@ check('group label and count are rendered', () => {
   assert.strictEqual(item.description, '2');
 });
 
+check('the forward group shows direct dependencies only', () => {
+  const forwardGroup = provider.getChildren(naviNode)[0];
+  const names = provider.getChildren(forwardGroup).map((n) => model.targets.get(n.id).name);
+  assert.deepStrictEqual(names, ['dlt_wrapper', 'map_engine', 'ui_core']);
+});
+
 check('expanding a forward child keeps following forward only', () => {
   const forwardGroup = provider.getChildren(naviNode)[0];
   const mapEngine = provider.getChildren(forwardGroup)
     .find((n) => model.targets.get(n.id).name === 'map_engine');
   const next = provider.getChildren(mapEngine).map((n) => model.targets.get(n.id).name);
   assert.deepStrictEqual(next, ['geo_utils', 'nds_reader']);
+});
+
+check('showTransitiveDependencies switches to the full closure', () => {
+  vscodeStub.__setConfig('showTransitiveDependencies', true);
+  try {
+    const forwardGroup = provider.getChildren(naviNode)[0];
+    const names = provider.getChildren(forwardGroup).map((n) => model.targets.get(n.id).name);
+    assert.deepStrictEqual(names,
+      ['dlt_wrapper', 'geo_utils', 'map_engine', 'nds_reader', 'sqlite_wrap', 'ui_core']);
+  } finally {
+    vscodeStub.__clearConfig();
+  }
 });
 
 check('external libraries render as leaves', () => {

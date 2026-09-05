@@ -68,6 +68,10 @@ class TargetTreeProvider {
     return vscode.workspace.getConfiguration('cmakeLinkExplorer').get('showExternalLibraries', true);
   }
 
+  get showTransitive() {
+    return vscode.workspace.getConfiguration('cmakeLinkExplorer').get('showTransitiveDependencies', false);
+  }
+
   visibleTargets() {
     if (!this.model) return [];
     const all = Array.from(this.model.targets.values());
@@ -131,9 +135,10 @@ class TargetTreeProvider {
   }
 
   neighbourIds(targetId, direction) {
+    const target = this.model.targets.get(targetId);
     const ids =
       direction === 'forward'
-        ? this.model.targets.get(targetId).dependencyIds
+        ? (this.showTransitive ? target.dependencyIds : target.directDependencyIds)
         : this.model.linkedBy.get(targetId) || [];
     const visible = this.showUtility ? ids : ids.filter((id) => fileApi.isLinkable(this.model.targets.get(id)));
     return visible.sort((a, b) =>
@@ -186,10 +191,11 @@ class TargetTreeProvider {
   targetTooltip(target) {
     const forward = this.neighbourIds(target.id, 'forward').length;
     const reverse = this.neighbourIds(target.id, 'reverse').length;
+    const transitive = target.dependencyIds.length;
     const lines = [
       '**' + target.name + '**  _' + (SHORT_TYPE[target.type] || target.type) + '_',
       '',
-      '- links: ' + forward,
+      '- links: ' + forward + (transitive > forward ? '  (' + transitive + ' including transitive)' : ''),
       '- linked by: ' + reverse,
       '- external libs: ' + target.externalLibraries.length,
       '- source files: ' + target.sourceCount
