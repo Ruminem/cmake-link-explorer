@@ -9,6 +9,7 @@ CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 
 | **Linker Map** | **뭐가 용량을 먹나**, 지난 빌드 대비 뭐가 늘었나 | 바이너리가 커졌을 때 |
 | **Compiled With** | 이 파일의 **실효 매크로와 include 경로** | `#ifdef`가 안 잡힐 때 |
 | **Cycles / Unused** | **순환 링크와 아무도 안 쓰는 라이브러리** | 구조 정리할 때 |
+| **Compare Trees** | 두 빌드 트리가 **어디서 갈라지나** | 여기선 되는데 저기선 깨질 때 |
 
 # 설치
 
@@ -301,6 +302,55 @@ CMake는 **정적 라이브러리끼리의 순환을 허용한다.** 링크 줄�
 
 ---
 
+# Compare With Another Build Tree
+
+같은 `CMakeLists.txt`라도 플랫폼이 다르면 **configure 결과가 다르다.** 평소 개발은
+윈도우에서 하고 제품판은 리눅스에서 빌드한다면, "여기선 되는데 저기선 깨지는" 것의
+정체는 대부분 이 차이다. 두 빌드 트리를 놓고 비교한다.
+
+```
+this tree   C:/proj/out/build/x64-Debug
+other tree  /mnt/linux/proj/build
+
+only in this tree (1)
+    win_shim  [static]    src/win/CMakeLists.txt:3
+
+only in the other tree (1)
+    posix_shim  [static]  src/posix/CMakeLists.txt:3
+
+differing targets (1)
+  "-" is only in this tree, "+" only in the other.
+
+  core
+    define    - USE_IOCP
+    define    + USE_EPOLL
+    include   - src/win
+    include   + src/posix
+    links     - win_shim
+    links     + posix_shim
+```
+
+## 경로를 그대로 비교하면 전부 다르다
+
+같은 프로젝트라도 두 머신의 경로는 앞부분이 완전히 다르다.
+`C:/work/proj/src`와 `/home/me/proj/src`를 문자열로 견주면 **모든 include가 "다름"**
+으로 나와서 신호가 파묻힌다.
+
+그래서 각 트리의 **자기 소스 루트 기준 상대 경로**로 바꿔서 맞춘다. 위 둘은 똑같이
+`src`가 된다. 구분자(`\` vs `/`)도 맞추고, 대소문자는 무시한다 — 한쪽은 대개 윈도우이고
+CMake가 체크아웃과 다른 대소문자를 기록할 수 있어서다.
+
+## 일부러 비교하지 않는 것
+
+| 제외 | 이유 |
+|---|---|
+| 프로젝트 밖 include 경로 | `C:/SDK/include`와 `/opt/sdk/include`는 SDK를 어디 깔았는지를 말할 뿐이다 |
+| 외부 라이브러리 | 같은 것이 한쪽에선 `ws2_32.lib`, 다른 쪽에선 `-lz`로 쓰인다 |
+
+둘 다 매 타겟마다 걸려서, 정작 봐야 할 차이를 덮어버린다.
+
+---
+
 # Linker Map
 
 ```
@@ -451,7 +501,7 @@ cat /tmp/it.log
 
 | 대상 | |
 |---|---|
-| 합성 File API 픽스처 + backtrace + 순환/미사용 | 33 checks |
+| 합성 File API 픽스처 + backtrace + 순환/미사용 + 트리 비교 | 41 checks |
 | `test/sample-project` (실제 CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 16 checks |
@@ -510,5 +560,3 @@ CMakeLists.txt로 측정한 값이다.
 - LLVM lld 맵 포맷 (실물 샘플이 생기면)
 - MSVC `link.exe /MAP` 포맷 (마찬가지로 실물 샘플이 생기면)
 - 그래프 뷰 (웹뷰 + 노드 드래그)
-- 윈도우 빌드 트리와 리눅스 빌드 트리 비교 — 타겟·매크로·include가 어긋난 곳을
-  빌드 전에 짚어준다

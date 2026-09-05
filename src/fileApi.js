@@ -540,6 +540,118 @@ function findUnusedTargets(model) {
   return unused;
 }
 
+// ------------------------------------------------- comparing two build trees
+
+// The same project configured on two machines has nothing in common at the
+// front of a path: C:/work/proj/libs/engine against /home/me/proj/libs/engine.
+// Compared as they are, every include would read as changed. Relative to each
+// tree's own source root they line up.
+//
+// Case-insensitively, because one of the two sides is usually Windows and CMake
+// can record a different casing than the checkout has -- the same reason the
+// file lookup ignores case. Two paths differing only in case are a real
+// difference on Linux, but reporting every path on a mis-cased checkout would
+// bury the differences worth seeing.
+function projectRelative(model, absolutePath) {
+  const root = String(model.sourceDir || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const text = String(absolutePath || '').replace(/\\/g, '/');
+  if (!root) return { path: text, inside: false };
+  const inside = text.toLowerCase() === root.toLowerCase() ||
+                 text.toLowerCase().startsWith(root.toLowerCase() + '/');
+  return { path: inside ? text.slice(root.length).replace(/^\//, '') || '.' : text, inside };
+}
+
+function difference(left, right) {
+  const key = (s) => s.toLowerCase();
+  const rightKeys = new Set(right.map(key));
+  const leftKeys = new Set(left.map(key));
+  return {
+    added: right.filter((s) => !leftKeys.has(key(s))),
+    removed: left.filter((s) => !rightKeys.has(key(s)))
+  };
+}
+
+function isEmptyDiff(diff) {
+  return !diff.added.length && !diff.removed.length;
+}
+
+/**
+ * What differs between the same project configured twice.
+ *
+ * Written for the case where day-to-day builds happen on one platform and the
+ * product is built on another: the thing worth catching is a target or a macro
+ * that only exists on the side you are not looking at.
+ *
+ * Targets are matched by name, since the ids carry a per-tree hash. Include
+ * paths outside the source tree -- an SDK, a toolchain -- have no counterpart to
+ * line up with, so they are reported per side rather than as a difference; the
+ * same goes for external libraries, which are spelled -lz on one platform and
+ * z.lib on the other for reasons that say nothing about the project.
+ */
+function compareModels(left, right) {
+  const byName = (model) => new Map(
+    Array.from(model.targets.values()).map((t) => [t.name, t]));
+  const leftTargets = byName(left);
+  const rightTargets = byName(right);
+
+  const onlyLeft = [];
+  const onlyRight = [];
+  const changed = [];
+
+  for (const [name, target] of leftTargets) {
+    if (!rightTargets.has(name)) onlyLeft.push(target);
+  }
+  for (const [name, target] of rightTargets) {
+    if (!leftTargets.has(name)) onlyRight.push(target);
+  }
+
+  const settings = (model, target) => {
+    const defines = [];
+    const includes = [];
+    const external = [];
+    for (const group of target.compileGroups || []) {
+      for (const define of group.defines) defines.push(define);
+      for (const include of group.includes) {
+        const rel = projectRelative(model, include.path);
+        (rel.inside ? includes : external).push(rel.path);
+      }
+    }
+    return { defines: dedupe(defines), includes: dedupe(includes), external: dedupe(external) };
+  };
+
+  for (const [name, leftTarget] of leftTargets) {
+    const rightTarget = rightTargets.get(name);
+    if (!rightTarget) continue;
+
+    const leftSide = settings(left, leftTarget);
+    const rightSide = settings(right, rightTarget);
+    const linksOf = (model, target) =>
+      (target.linkTargetIds || []).map((id) => (model.targets.get(id) || {}).name).filter(Boolean);
+
+    const entry = {
+      name,
+      type: leftTarget.type === rightTarget.type
+        ? null : { left: leftTarget.type, right: rightTarget.type },
+      defines: difference(leftSide.defines, rightSide.defines),
+      includes: difference(leftSide.includes, rightSide.includes),
+      links: difference(linksOf(left, leftTarget), linksOf(right, rightTarget)),
+      externalIncludes: { left: leftSide.external, right: rightSide.external },
+      externalLibraries: {
+        left: leftTarget.externalLibraries || [],
+        right: rightTarget.externalLibraries || []
+      }
+    };
+
+    if (entry.type || !isEmptyDiff(entry.defines) || !isEmptyDiff(entry.includes) ||
+        !isEmptyDiff(entry.links)) {
+      changed.push(entry);
+    }
+  }
+
+  changed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return { onlyLeft, onlyRight, changed };
+}
+
 function dedupe(items) {
   return Array.from(new Set(items));
 }
@@ -589,6 +701,7 @@ module.exports = {
   backtraceChain,
   findCycles,
   findUnusedTargets,
+  compareModels,
   isLinkable,
   isLibraryFragment,
   reduceDependencies: computeDirectDependencies,

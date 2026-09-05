@@ -129,6 +129,12 @@
         "icon": "$(warning)"
       },
       {
+        "command": "cmakeLinkExplorer.compareTrees",
+        "title": "Compare With Another Build Tree",
+        "category": "CMake Links",
+        "icon": "$(diff)"
+      },
+      {
         "command": "cmakeLinkExplorer.applyLinkForInclude",
         "title": "Link The Library For This Include",
         "category": "CMake Links"

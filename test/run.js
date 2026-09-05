@@ -406,5 +406,100 @@ check('a library reachable only through the link line is not called unused', () 
 });
 
 console.log('');
+console.log('--- comparing two configured trees ---');
+
+// The point of the comparison is the pair of trees living on different
+// machines, so these give the two sides different source roots on purpose.
+function tree(sourceDir, rows) {
+  const targets = new Map();
+  for (const row of rows) {
+    targets.set(row.name, {
+      id: row.name, name: row.name, type: row.type || 'STATIC_LIBRARY',
+      linkTargetIds: row.links || [],
+      externalLibraries: row.externals || [],
+      compileGroups: [{
+        language: 'CXX', standard: null,
+        defines: row.defines || [],
+        includes: (row.includes || []).map((p) => ({ path: p, isSystem: false })),
+        sourceIndexes: [0]
+      }]
+    });
+  }
+  return { sourceDir, targets, buildDir: sourceDir + '/build' };
+}
+
+const WIN = 'C:/work/proj';
+const NIX = '/home/me/proj';
+
+check('a target on one side only is reported', () => {
+  const diff = fileApi.compareModels(
+    tree(WIN, [{ name: 'core' }, { name: 'win_shim' }]),
+    tree(NIX, [{ name: 'core' }, { name: 'posix_shim' }]));
+  assert.deepStrictEqual(diff.onlyLeft.map((t) => t.name), ['win_shim']);
+  assert.deepStrictEqual(diff.onlyRight.map((t) => t.name), ['posix_shim']);
+});
+
+check('macros that differ are the headline', () => {
+  const diff = fileApi.compareModels(
+    tree(WIN, [{ name: 'core', defines: ['CORE_V=2', 'USE_IOCP'] }]),
+    tree(NIX, [{ name: 'core', defines: ['CORE_V=2', 'USE_EPOLL'] }]));
+  assert.strictEqual(diff.changed.length, 1);
+  assert.deepStrictEqual(diff.changed[0].defines.removed, ['USE_IOCP']);
+  assert.deepStrictEqual(diff.changed[0].defines.added, ['USE_EPOLL']);
+});
+
+check('include paths are matched against each tree own source root', () => {
+  // Identical layout, two machines. Compared as they stand, every path differs.
+  const diff = fileApi.compareModels(
+    tree(WIN, [{ name: 'core', includes: [WIN + '/src', WIN + '/src/win'] }]),
+    tree(NIX, [{ name: 'core', includes: [NIX + '/src', NIX + '/src/posix'] }]));
+  assert.strictEqual(diff.changed.length, 1);
+  assert.deepStrictEqual(diff.changed[0].includes.removed, ['src/win']);
+  assert.deepStrictEqual(diff.changed[0].includes.added, ['src/posix']);
+});
+
+check('a backslash root still lines up with a forward-slash one', () => {
+  const diff = fileApi.compareModels(
+    tree('C:\\work\\proj', [{ name: 'core', includes: ['C:\\work\\proj\\src'] }]),
+    tree(NIX, [{ name: 'core', includes: [NIX + '/src'] }]));
+  assert.deepStrictEqual(diff.changed, []);
+});
+
+check('a differently cased checkout is not a wall of differences', () => {
+  const diff = fileApi.compareModels(
+    tree('C:/Work/Proj', [{ name: 'core', includes: ['C:/work/proj/src'] }]),
+    tree(NIX, [{ name: 'core', includes: [NIX + '/src'] }]));
+  assert.deepStrictEqual(diff.changed, []);
+});
+
+check('SDK paths outside the project are not called differences', () => {
+  // /opt/sdk against C:/SDK says where two machines keep a toolchain, nothing
+  // about the project, and would otherwise fire on every target.
+  const diff = fileApi.compareModels(
+    tree(WIN, [{ name: 'core', includes: ['C:/SDK/include'], externals: ['ws2_32.lib'] }]),
+    tree(NIX, [{ name: 'core', includes: ['/opt/sdk/include'], externals: ['-lz'] }]));
+  assert.deepStrictEqual(diff.changed, []);
+});
+
+check('a type or a link that changed is caught', () => {
+  const diff = fileApi.compareModels(
+    tree(WIN, [{ name: 'core', type: 'STATIC_LIBRARY', links: ['a'] }, { name: 'a' }]),
+    tree(NIX, [{ name: 'core', type: 'SHARED_LIBRARY', links: ['b'] }, { name: 'b' },
+               { name: 'a' }]));
+  const core = diff.changed.find((c) => c.name === 'core');
+  assert.deepStrictEqual(core.type, { left: 'STATIC_LIBRARY', right: 'SHARED_LIBRARY' });
+  assert.deepStrictEqual(core.links.removed, ['a']);
+  assert.deepStrictEqual(core.links.added, ['b']);
+});
+
+check('two trees configured the same way report nothing', () => {
+  const rows = [{ name: 'core', defines: ['CORE_V=2'], links: ['a'] }, { name: 'a' }];
+  const diff = fileApi.compareModels(tree(WIN, rows), tree(NIX, rows));
+  assert.deepStrictEqual(diff.onlyLeft, []);
+  assert.deepStrictEqual(diff.onlyRight, []);
+  assert.deepStrictEqual(diff.changed, []);
+});
+
+console.log('');
 console.log(failures === 0 ? 'all checks passed' : failures + ' check(s) failed');
 process.exit(failures === 0 ? 0 : 1);

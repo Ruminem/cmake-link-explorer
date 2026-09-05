@@ -62,6 +62,7 @@ function activate(context) {
   register('cmakeLinkExplorer.linkForInclude', linkForInclude);
   register('cmakeLinkExplorer.compileSettings', compileSettings);
   register('cmakeLinkExplorer.projectHealth', projectHealth);
+  register('cmakeLinkExplorer.compareTrees', compareTrees);
   register('cmakeLinkExplorer.applyLinkForInclude', reportInclude);
 
   context.subscriptions.push(
@@ -437,6 +438,108 @@ class LinkIncludeActionProvider {
     action.isPreferred = direct;
     return [action];
   }
+}
+
+// Development happens on one platform and the product is built on another, so
+// the same CMakeLists produces two different configured trees. What differs
+// between them is where "builds here, breaks there" comes from.
+async function compareTrees() {
+  if (!provider.model) {
+    vscode.window.showInformationMessage('No CMake targets loaded.');
+    return;
+  }
+
+  const other = await pickOtherBuildDir();
+  if (!other) return;
+
+  let otherModel;
+  try {
+    otherModel = fileApi.loadModel(other, config().get('configuration', ''));
+  } catch (e) {
+    vscode.window.showWarningMessage('Could not read ' + other + ': ' + (e.message || e));
+    return;
+  }
+
+  const diff = fileApi.compareModels(provider.model, otherModel);
+
+  output.clear();
+  output.show(true);
+  output.appendLine('this tree   ' + provider.model.buildDir);
+  output.appendLine('other tree  ' + otherModel.buildDir);
+  output.appendLine('');
+
+  const listTargets = (label, targets) => {
+    if (!targets.length) return;
+    output.appendLine(label + ' (' + targets.length + ')');
+    for (const target of targets) {
+      output.appendLine('    ' + target.name +
+                        '  [' + (SHORT_TYPE[target.type] || target.type) + ']' +
+                        (target.declaration
+                          ? '    ' + target.declaration.file + ':' + target.declaration.line : ''));
+    }
+    output.appendLine('');
+  };
+  listTargets('only in this tree', diff.onlyLeft);
+  listTargets('only in the other tree', diff.onlyRight);
+
+  const writeDiff = (label, entry) => {
+    if (!entry.added.length && !entry.removed.length) return;
+    // "+" is what the other tree has and this one does not.
+    for (const value of entry.removed) output.appendLine('    ' + label + '  - ' + value);
+    for (const value of entry.added) output.appendLine('    ' + label + '  + ' + value);
+  };
+
+  if (!diff.changed.length) {
+    output.appendLine('Every target the two share is configured the same way.');
+  } else {
+    output.appendLine('differing targets (' + diff.changed.length + ')');
+    output.appendLine('  "-" is only in this tree, "+" only in the other.');
+    for (const entry of diff.changed) {
+      output.appendLine('');
+      output.appendLine('  ' + entry.name);
+      if (entry.type) {
+        output.appendLine('    type      - ' + entry.type.left + '  + ' + entry.type.right);
+      }
+      writeDiff('define  ', entry.defines);
+      writeDiff('include ', entry.includes);
+      writeDiff('links   ', entry.links);
+    }
+  }
+
+  output.appendLine('');
+  output.appendLine('Include paths outside the project and external libraries are left out:');
+  output.appendLine('they sit at different places on the two machines and are spelled');
+  output.appendLine('differently by the two toolchains, so comparing them says nothing.');
+}
+
+async function pickOtherBuildDir() {
+  const roots = (vscode.workspace.workspaceFolders || [])
+    .filter((f) => f.uri.scheme === 'file')
+    .map((f) => f.uri.fsPath);
+  const current = provider.model.buildDir;
+  const found = fileApi.findBuildDirs(roots)
+    .filter((dir) => path.resolve(dir) !== path.resolve(current));
+
+  const BROWSE = 'Choose another folder...';
+  const items = found.map((dir) => ({ label: dir })).concat([{ label: BROWSE }]);
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Compare this build tree against which other one?'
+  });
+  if (!picked) return null;
+  if (picked.label !== BROWSE) return picked.label;
+
+  const chosen = await vscode.window.showOpenDialog({
+    canSelectFiles: false, canSelectFolders: true, canSelectMany: false,
+    openLabel: 'Compare against this build tree'
+  });
+  if (!chosen || !chosen.length) return null;
+
+  const dir = chosen[0].fsPath;
+  if (!fileApi.isBuildDir(dir)) {
+    vscode.window.showWarningMessage('No CMakeCache.txt in ' + dir + '.');
+    return null;
+  }
+  return dir;
 }
 
 // Two questions a link graph can answer about itself: what loops, and what
