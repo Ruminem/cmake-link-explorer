@@ -8,6 +8,42 @@ CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 
 | **Targets** | 무엇이 무엇을 링크하나, 특히 **누가 이걸 링크하나** | 구조 파악, 영향 범위 |
 | **Linker Map** | **뭐가 용량을 먹나**, 지난 빌드 대비 뭐가 늘었나 | 바이너리가 커졌을 때 |
 
+# 설치
+
+빌드도 패키징도 의존성도 없다. 순수 JavaScript라 클론해서 링크만 걸면 끝이다.
+
+```
+git clone https://github.com/Ruminem/cmake-link-explorer.git ~/cmake-link-explorer
+mkdir -p ~/.vscode/extensions
+ln -s ~/cmake-link-explorer ~/.vscode/extensions/cmake-link-explorer
+```
+
+VS Code를 **완전히 종료했다가** 다시 켠다. 확인:
+
+```
+code --list-extensions | grep cmake-link
+```
+
+`local.cmake-link-explorer` 가 뜨면 설치된 것이다. 테마나 아이콘 확장을 깐 것과
+같은 상태이고, **클론한 폴더를 VS Code로 열어둘 필요는 없다.** 링크가 그 경로를
+가리키므로 폴더를 옮기거나 지우지만 않으면 된다.
+
+그다음부터는 CMake 프로젝트를 열거나 C/C++ 파일을 여는 것만으로 켜진다.
+아이콘을 누를 필요도 없다.
+
+업데이트는 `git pull` 하고 VS Code를 다시 켠다.
+
+빌드 디렉토리는 `CMakeCache.txt`를 찾아 자동 탐지한다(3단계 깊이까지).
+맵 파일도 빌드 디렉토리에서 `*.map`을 찾아 목록으로 띄운다.
+
+## 익스텐션 자체를 고칠 때만: F5
+
+이 저장소를 VS Code로 열고 `F5`를 누르면 익스텐션이 로드된 새 창이 뜬다.
+코드를 고쳐가며 확인할 때만 쓰는 개발 모드이고, 그냥 쓰기만 할 거면 필요 없다.
+
+---
+
+
 ---
 
 # Link for include
@@ -245,39 +281,6 @@ DIFF
 ```
 
 ---
-
-# 설치
-
-빌드도 패키징도 의존성도 없다. 순수 JavaScript라 클론해서 링크만 걸면 끝이다.
-
-```
-git clone https://github.com/Ruminem/cmake-link-explorer.git ~/cmake-link-explorer
-mkdir -p ~/.vscode/extensions
-ln -s ~/cmake-link-explorer ~/.vscode/extensions/cmake-link-explorer
-```
-
-VS Code를 **완전히 종료했다가** 다시 켠다. 확인:
-
-```
-code --list-extensions | grep cmake-link
-```
-
-`local.cmake-link-explorer` 가 뜨면 설치된 것이다. 테마나 아이콘 확장을 깐 것과
-같은 상태이고, **클론한 폴더를 VS Code로 열어둘 필요는 없다.** 링크가 그 경로를
-가리키므로 폴더를 옮기거나 지우지만 않으면 된다.
-
-그다음부터는 CMake 프로젝트를 열거나 C/C++ 파일을 여는 것만으로 켜진다.
-아이콘을 누를 필요도 없다.
-
-업데이트는 `git pull` 하고 VS Code를 다시 켠다.
-
-빌드 디렉토리는 `CMakeCache.txt`를 찾아 자동 탐지한다(3단계 깊이까지).
-맵 파일도 빌드 디렉토리에서 `*.map`을 찾아 목록으로 띄운다.
-
-## 익스텐션 자체를 고칠 때만: F5
-
-이 저장소를 VS Code로 열고 `F5`를 누르면 익스텐션이 로드된 새 창이 뜬다.
-코드를 고쳐가며 확인할 때만 쓰는 개발 모드이고, 그냥 쓰기만 할 거면 필요 없다.
 
 # 설정
 
