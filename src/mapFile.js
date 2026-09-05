@@ -328,19 +328,23 @@ function summarise(model) {
 // ---------------------------------------------------------------- demangling
 
 // C++ symbols in a map file are mangled, which makes the symbol list unreadable
-// for exactly the projects this is most useful on. Pipe them all through c++filt
-// in one go; if it is not installed, the names simply stay as they are.
-function demangle(model, command) {
-  const tool = command || 'c++filt';
-  const names = model.symbols.map((s) => s.name);
+// for exactly the projects this is most useful on. Pipe them through c++filt in
+// one go; if it is not installed, the names simply stay as they are.
+//
+// A real map can carry hundreds of thousands of symbols, and demangling all of
+// them blocks for about a second. Only the largest ones are ever shown, so
+// `limit` keeps the work proportional to what is on screen.
+function demangle(model, command, limit) {
+  const chosen = limit ? largestSymbols(model, limit) : model.symbols;
+  const names = chosen.map((s) => s.name);
   if (!names.length) return model;
 
   let result;
   try {
-    result = require('child_process').spawnSync(tool, ['--no-strip-underscore'], {
+    result = require('child_process').spawnSync(command || 'c++filt', ['--no-strip-underscore'], {
       input: names.join('\n'),
       encoding: 'utf8',
-      maxBuffer: 32 * 1024 * 1024,
+      maxBuffer: 64 * 1024 * 1024,
       timeout: 10000
     });
   } catch (e) {
@@ -352,7 +356,7 @@ function demangle(model, command) {
 
   const out = result.stdout.split('\n');
   if (out.length < names.length) return model;
-  model.symbols.forEach((symbol, index) => {
+  chosen.forEach((symbol, index) => {
     const value = (out[index] || '').trim();
     // Mach-O prefixes every symbol with an underscore, which c++filt leaves in
     // place; strip it only when demangling did not already happen.
@@ -360,6 +364,25 @@ function demangle(model, command) {
     if (cleaned && cleaned !== symbol.name) symbol.display = cleaned;
   });
   return model;
+}
+
+/**
+ * The symbols worth showing: biggest first, sized by the input section they sit
+ * in, since GNU ld gives symbols an address but no size of their own.
+ *
+ * @returns {Array<object>} entries from `model.symbols`
+ */
+function largestSymbols(model, limit) {
+  const sizeByKeySection = new Map();
+  for (const entry of model.entries) {
+    sizeByKeySection.set(entry.key + ' ' + entry.section, entry.size);
+  }
+  return model.symbols
+    .map((symbol) => ({ symbol, size: sizeByKeySection.get(symbol.key + ' ' + symbol.section) || 0 }))
+    .filter((row) => row.size > 0)
+    .sort((a, b) => b.size - a.size)
+    .slice(0, limit)
+    .map((row) => row.symbol);
 }
 
 function parse(text, filePath) {
@@ -520,6 +543,7 @@ module.exports = {
   parseFile,
   findMapFiles,
   demangle,
+  largestSymbols,
   matchTargets,
   diff,
   summarise,

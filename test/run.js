@@ -84,6 +84,36 @@ check('reducing dependencies never loses reachability', () => {
   }
 });
 
+check('a dependency cycle neither hangs nor loses edges', () => {
+  // Static library cycles are legal in CMake. The reduction must not drop an
+  // edge that is the only way to reach a target, and must terminate.
+  const cyclic = {
+    targets: new Map(),
+    linkedBy: new Map(),
+    sourceDir: '',
+    configuration: ''
+  };
+  const make = (name, deps) => ({
+    id: name, name, type: 'STATIC_LIBRARY', nameOnDisk: 'lib' + name + '.a',
+    sourceDir: name, dependencyIds: deps, externalLibraries: [], sources: [], sourceCount: 0
+  });
+  // a <-> b, both reaching c, plus a lone d.
+  for (const t of [make('a', ['b', 'c']), make('b', ['a', 'c']), make('c', []), make('d', [])]) {
+    cyclic.targets.set(t.id, t);
+  }
+  fileApi.reduceDependencies(cyclic.targets);
+
+  for (const [id, expected] of [['a', ['b', 'c']], ['b', ['a', 'c']], ['c', []], ['d', []]]) {
+    const direct = cyclic.targets.get(id).directDependencyIds;
+    for (const dep of expected) {
+      assert.ok(direct.indexOf(dep) !== -1 ||
+                expected.some((other) => other !== dep &&
+                  cyclic.targets.get(other).dependencyIds.indexOf(dep) !== -1),
+                id + ' can no longer reach ' + dep);
+    }
+  }
+});
+
 check('the reverse index agrees with the forward one', () => {
   for (const target of model.targets.values()) {
     for (const id of target.directDependencyIds) {

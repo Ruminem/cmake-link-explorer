@@ -362,7 +362,7 @@ let resolveCache = new Map();
 
 function resolveInclude(document, includePath) {
   if (!provider.model) return null;
-  const key = document.uri.fsPath + ' ' + includePath;
+  const key = document.uri.fsPath + ' ' + includePath;
   if (resolveCache.has(key)) return resolveCache.get(key);
 
   let result = null;
@@ -546,7 +546,10 @@ async function applyLink(result) {
 function loadMapFile(filePath) {
   const model = mapFile.parseFile(filePath);
   if (config().get('demangleSymbols', true)) {
-    mapFile.demangle(model, config().get('demanglerCommand', 'c++filt'));
+    // Only what the view can show; demangling every symbol of a large map costs
+    // about a second on the extension host thread.
+    mapFile.demangle(model, config().get('demanglerCommand', 'c++filt'),
+                     config().get('mapSymbolLimit', 200));
   }
   mapProvider.showMap(model);
   mapView.title = path.basename(filePath);

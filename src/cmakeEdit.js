@@ -9,6 +9,34 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * Records where every unescaped double quote sits, so that "is this position
+ * inside a string?" is a binary search instead of a rescan from the start of the
+ * file. A large CMakeLists.txt turns the naive version into an O(n^2) walk.
+ */
+function quoteIndex(text) {
+  const positions = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\') { i++; continue; }
+    if (text[i] === '"') positions.push(i);
+  }
+  const quotes = Int32Array.from(positions);
+
+  return {
+    // Odd number of quotes before the position means it is inside one.
+    inString(index) {
+      let low = 0;
+      let high = quotes.length;
+      while (low < high) {
+        const mid = (low + high) >> 1;
+        if (quotes[mid] < index) low = mid + 1;
+        else high = mid;
+      }
+      return (low & 1) === 1;
+    }
+  };
+}
+
+/**
  * Finds a CMake command invocation whose first argument is `firstArgument`.
  *
  * @returns {{start:number, open:number, close:number, args:string}|null}
@@ -17,11 +45,13 @@ const path = require('path');
 function findCommand(text, names, firstArgument) {
   const wanted = Array.isArray(names) ? names : [names];
   const pattern = new RegExp('(^|[\\s)])(' + wanted.join('|') + ')\\s*\\(', 'gi');
+  const quotes = quoteIndex(text);
 
   let match;
   while ((match = pattern.exec(text)) !== null) {
+    const nameStart = match.index + match[1].length;
     const open = match.index + match[0].length - 1;
-    if (inCommentOrString(text, match.index + match[1].length)) continue;
+    if (inCommentOrString(text, nameStart, quotes)) continue;
 
     const close = matchParen(text, open);
     if (close === -1) continue;
@@ -29,7 +59,7 @@ function findCommand(text, names, firstArgument) {
     const args = text.slice(open + 1, close);
     const first = args.trim().split(/\s+/)[0];
     if (first === firstArgument) {
-      return { start: match.index + match[1].length, open, close, args, name: match[2] };
+      return { start: nameStart, open, close, args, name: match[2] };
     }
   }
   return null;
@@ -39,7 +69,8 @@ function matchParen(text, openIndex) {
   let depth = 0;
   for (let i = openIndex; i < text.length; i++) {
     const c = text[i];
-    if (c === '#' && !inString(text, i)) {
+    // Strings are stepped over below, so a '#' reached here starts a comment.
+    if (c === '#') {
       const newline = text.indexOf('\n', i);
       if (newline === -1) return -1;
       i = newline;
@@ -58,27 +89,22 @@ function matchParen(text, openIndex) {
   return -1;
 }
 
-function skipString(text, quoteIndex) {
-  for (let i = quoteIndex + 1; i < text.length; i++) {
+function skipString(text, quoteIndexAt) {
+  for (let i = quoteIndexAt + 1; i < text.length; i++) {
     if (text[i] === '\\') { i++; continue; }
     if (text[i] === '"') return i;
   }
   return text.length;
 }
 
-function inString(text, index) {
-  let quoted = false;
-  for (let i = 0; i < index; i++) {
-    if (text[i] === '\\') { i++; continue; }
-    if (text[i] === '"') quoted = !quoted;
-  }
-  return quoted;
-}
-
-function inCommentOrString(text, index) {
+function inCommentOrString(text, index, quotes) {
+  if (quotes.inString(index)) return true;
+  // A '#' earlier on the same line starts a comment, unless it is quoted.
   const lineStart = text.lastIndexOf('\n', index - 1) + 1;
-  const before = text.slice(lineStart, index);
-  return before.indexOf('#') !== -1 || inString(text, index);
+  for (let i = text.indexOf('#', lineStart); i !== -1 && i < index; i = text.indexOf('#', i + 1)) {
+    if (!quotes.inString(i)) return true;
+  }
+  return false;
 }
 
 function offsetToPosition(text, offset) {

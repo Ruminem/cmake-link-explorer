@@ -142,28 +142,59 @@ function linkLibraryFragments(target) {
 // target_link_libraries call. Reducing the graph to its minimal equivalent
 // recovers the structure that was actually written, which is the whole point of
 // the view -- otherwise every executable looks like it links everything.
+//
+// An edge i -> j is dropped when j is also reachable through another of i's
+// dependencies. Because the sets CMake hands over are already closed, that test
+// needs nothing more than the dependency sets themselves; no graph walk.
+//
+// The sets are bitmaps over target indices. A large project carries hundreds of
+// thousands of edges, and comparing them as JavaScript Sets means one lookup per
+// pair of dependencies, which runs into seconds. Word-wise ORs make it linear in
+// the number of edges.
+//
+// If a project ever produced sets that were not closed, the union below would be
+// too small and a few redundant edges would survive. That errs the safe way: an
+// edge is only ever dropped when a real path to the same target exists, so
+// nothing becomes unreachable.
 function computeDirectDependencies(targets) {
-  const reachableCache = new Map();
+  const ids = [...targets.keys()];
+  const count = ids.length;
+  if (!count) return;
 
-  const reachableFrom = (id, visiting) => {
-    if (reachableCache.has(id)) return reachableCache.get(id);
-    if (visiting.has(id)) return new Set(); // defensive: dependency cycles
-    visiting.add(id);
-    const out = new Set();
-    for (const next of targets.get(id).dependencyIds) {
-      out.add(next);
-      for (const deep of reachableFrom(next, visiting)) out.add(deep);
+  const indexOf = new Map();
+  ids.forEach((id, index) => indexOf.set(id, index));
+
+  const words = (count + 31) >> 5;
+  const dependencyBits = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const bits = new Uint32Array(words);
+    for (const depId of targets.get(ids[i]).dependencyIds) {
+      const j = indexOf.get(depId);
+      if (j !== undefined) bits[j >> 5] |= 1 << (j & 31);
     }
-    visiting.delete(id);
-    reachableCache.set(id, out);
-    return out;
-  };
+    dependencyBits[i] = bits;
+  }
 
-  for (const target of targets.values()) {
-    const deps = target.dependencyIds;
-    target.directDependencyIds = deps.filter((candidate) =>
-      !deps.some((other) => other !== candidate && reachableFrom(other, new Set()).has(candidate))
-    );
+  const covered = new Uint32Array(words);
+  for (let i = 0; i < count; i++) {
+    covered.fill(0);
+    const own = dependencyBits[i];
+    for (let w = 0; w < words; w++) {
+      let bits = own[w];
+      while (bits) {
+        const lowest = bits & -bits;
+        const j = (w << 5) + (31 - Math.clz32(lowest));
+        bits ^= lowest;
+        const other = dependencyBits[j];
+        for (let k = 0; k < words; k++) covered[k] |= other[k];
+      }
+    }
+
+    const target = targets.get(ids[i]);
+    target.directDependencyIds = target.dependencyIds.filter((depId) => {
+      const j = indexOf.get(depId);
+      return j !== undefined && (covered[j >> 5] & (1 << (j & 31))) === 0;
+    });
   }
 }
 
@@ -317,5 +348,6 @@ module.exports = {
   loadModel,
   isLinkable,
   isLibraryFragment,
+  reduceDependencies: computeDirectDependencies,
   findLinkPath
 };
