@@ -197,12 +197,29 @@ function resolve(model, absoluteFile, includePath, isLinkable) {
   if (fromTarget.dependencyIds.indexOf(provider.id) !== -1) {
     // Reachable, but only because something else drags it in. That works today
     // and silently breaks the day the middle library stops using it.
-    return Object.assign(result, { status: 'transitive' });
+    return Object.assign(result, {
+      status: 'transitive',
+      keyword: scopeFor(fromTarget, absoluteFile)
+    });
   }
   return Object.assign(result, {
     status: 'needs-link',
-    suggestion: 'target_link_libraries(' + fromTarget.name + ' PRIVATE ' + provider.name + ')'
+    keyword: scopeFor(fromTarget, absoluteFile),
+    suggestion: 'target_link_libraries(' + fromTarget.name + ' ' +
+                scopeFor(fromTarget, absoluteFile) + ' ' + provider.name + ')'
   });
+}
+
+/**
+ * Which keyword the new dependency needs.
+ *
+ * PRIVATE is right for an include in a .cpp: nobody else sees it. An include in
+ * a header is part of this target's own interface, so anything consuming the
+ * target sees it too and the dependency has to travel with it.
+ */
+function scopeFor(target, includingFile) {
+  if (target.type === 'INTERFACE_LIBRARY') return 'INTERFACE';
+  return isHeader(includingFile) ? 'PUBLIC' : 'PRIVATE';
 }
 
 module.exports = {
@@ -210,5 +227,6 @@ module.exports = {
   isHeader,
   targetOwningFile,
   providersOfHeader,
+  scopeFor,
   resolve
 };

@@ -34,6 +34,17 @@ target_link_libraries(nds_test PRIVATE nds_reader dlt_wrapper)
 `add_library`/`add_executable` 바로 다음에 새로 만든다. 같은 파일의 다른
 타겟은 건드리지 않는다.
 
+**키워드는 어디서 include 했느냐로 정해진다.**
+
+| include 위치 | 키워드 | 이유 |
+|---|---|---|
+| `.cpp` | `PRIVATE` | 남이 볼 일 없다 |
+| `.h` / `.hpp` | `PUBLIC` | 이 타겟의 인터페이스가 된다. 소비자도 그 헤더를 보므로 의존성이 같이 따라가야 한다 |
+| INTERFACE 라이브러리 | `INTERFACE` | 다른 선택지가 없다 |
+
+헤더에서 include했는데 `PRIVATE`로 걸면 **여기선 컴파일되고 소비자 쪽에서
+깨진다.** 같은 헤더라도 `.cpp`에서 부르면 `PRIVATE`, `.h`에서 부르면 `PUBLIC`.
+
 ## 네 가지 판정
 
 | 상태 | 뜻 |
@@ -313,7 +324,7 @@ cat /tmp/it.log
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 15 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 | 46 checks |
-| include → 링크 해결 + CMakeLists 편집 | 23 checks |
+| include → 링크 해결 + CMakeLists 편집 | 28 checks |
 | VS Code 확장 호스트 (1.136) | 35 checks |
 
 # 앞으로

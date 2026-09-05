@@ -138,6 +138,46 @@ check('a file outside the project is reported as such', () => {
 });
 
 console.log('');
+console.log('--- PUBLIC, PRIVATE or INTERFACE ---');
+
+check('an include in a .cpp is PRIVATE', () => {
+  const result = resolve('tests/nds_test.cpp', 'dlt_wrapper.h');
+  assert.strictEqual(result.keyword, 'PRIVATE');
+  assert.ok(/ PRIVATE dlt_wrapper\)$/.test(result.suggestion), result.suggestion);
+});
+
+check('the same include from a header is PUBLIC', () => {
+  // The header becomes part of map_engine's interface, so consumers need the
+  // dependency too; PRIVATE would compile here and break them.
+  const result = resolve('libs/map_engine/map_engine.h', 'dlt_wrapper.h');
+  assert.strictEqual(result.from.name, 'map_engine');
+  assert.strictEqual(result.keyword, 'PUBLIC');
+  assert.strictEqual(result.suggestion,
+                     'target_link_libraries(map_engine PUBLIC dlt_wrapper)');
+});
+
+check('every header extension counts, not just .h', () => {
+  const target = byName.get('map_engine');
+  for (const file of ['a.h', 'a.hpp', 'a.hh', 'a.hxx', 'a.inl']) {
+    assert.strictEqual(resolver.scopeFor(target, file), 'PUBLIC', file);
+  }
+  for (const file of ['a.cpp', 'a.cc', 'a.c', 'a.cxx']) {
+    assert.strictEqual(resolver.scopeFor(target, file), 'PRIVATE', file);
+  }
+});
+
+check('an INTERFACE library can only use INTERFACE', () => {
+  assert.strictEqual(
+    resolver.scopeFor({ type: 'INTERFACE_LIBRARY' }, 'a.cpp'), 'INTERFACE');
+  assert.strictEqual(
+    resolver.scopeFor({ type: 'INTERFACE_LIBRARY' }, 'a.h'), 'INTERFACE');
+});
+
+check('a transitive result also carries the right keyword', () => {
+  assert.strictEqual(resolve('app/navi_app.cpp', 'geo_utils.h').keyword, 'PRIVATE');
+});
+
+console.log('');
 console.log('--- editing CMakeLists.txt ---');
 
 const apply = (plan) => {

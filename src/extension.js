@@ -515,7 +515,8 @@ async function showCandidates(result) {
 }
 
 async function applyLink(result) {
-  const plan = cmakeEdit.planLinkEdit(provider.model, result.from, result.provider.name);
+  const plan = cmakeEdit.planLinkEdit(
+    provider.model, result.from, result.provider.name, result.keyword);
   if (plan.kind === 'manual') {
     vscode.window.showWarningMessage(plan.reason);
     return;
