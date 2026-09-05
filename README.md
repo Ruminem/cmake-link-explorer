@@ -43,9 +43,6 @@ code --list-extensions | grep cmake-link
 
 ---
 
-
----
-
 # Link for include
 
 가장 자주 막히는 지점이다.
