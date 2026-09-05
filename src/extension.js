@@ -4,9 +4,13 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const fileApi = require('./fileApi');
+const mapFile = require('./mapFile');
 const { TargetTreeProvider, SHORT_TYPE } = require('./tree');
+const { MapTreeProvider } = require('./mapTree');
 
 let provider = null;
+let mapProvider = null;
+let mapView = null;
 let treeView = null;
 let output = null;
 let statusItem = null;
@@ -19,6 +23,7 @@ function config() {
 
 function activate(context) {
   provider = new TargetTreeProvider();
+  mapProvider = new MapTreeProvider();
   output = vscode.window.createOutputChannel('CMake Link Explorer');
 
   treeView = vscode.window.createTreeView('cmakeLinkExplorer.targets', {
@@ -26,10 +31,15 @@ function activate(context) {
     showCollapseAll: true
   });
 
+  mapView = vscode.window.createTreeView('cmakeLinkExplorer.map', {
+    treeDataProvider: mapProvider,
+    showCollapseAll: true
+  });
+
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
   statusItem.command = 'cmakeLinkExplorer.search';
 
-  context.subscriptions.push(treeView, output, statusItem, {
+  context.subscriptions.push(treeView, mapView, output, statusItem, {
     dispose: () => replyWatcher && replyWatcher.dispose()
   });
 
@@ -43,6 +53,9 @@ function activate(context) {
   register('cmakeLinkExplorer.whyLinked', whyLinked);
   register('cmakeLinkExplorer.openCMakeLists', openCMakeLists);
   register('cmakeLinkExplorer.copyName', copyName);
+  register('cmakeLinkExplorer.openMap', openMap);
+  register('cmakeLinkExplorer.diffMaps', diffMaps);
+  register('cmakeLinkExplorer.closeMap', closeMap);
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -63,7 +76,10 @@ function activate(context) {
     reload: reload,
     getModel: () => provider.model,
     getProvider: () => provider,
-    getBuildDirectory: () => currentBuildDir
+    getBuildDirectory: () => currentBuildDir,
+    getMapProvider: () => mapProvider,
+    loadMap: loadMapFile,
+    compareMaps: compareMapFiles
   };
 }
 
@@ -318,6 +334,87 @@ async function copyName(node) {
   if (!provider.model || !node || !node.id) return;
   const target = provider.model.targets.get(node.id);
   if (target) await vscode.env.clipboard.writeText(target.name);
+}
+
+// ---------------------------------------------------------------- map files
+
+function loadMapFile(filePath) {
+  const model = mapFile.parseFile(filePath);
+  if (config().get('demangleSymbols', true)) {
+    mapFile.demangle(model, config().get('demanglerCommand', 'c++filt'));
+  }
+  mapProvider.showMap(model);
+  mapView.title = path.basename(filePath);
+  mapView.description = model.format + '  ·  ' + mapFile.formatBytes(model.totals.total);
+  return model;
+}
+
+function compareMapFiles(beforePath, afterPath) {
+  const before = mapFile.parseFile(beforePath);
+  const after = mapFile.parseFile(afterPath);
+  mapProvider.showDiff(before, after);
+  mapView.title = 'diff';
+  mapView.description = path.basename(beforePath) + ' → ' + path.basename(afterPath);
+  return mapProvider.comparison;
+}
+
+// Offers the map files sitting in the build tree, plus a way to pick any other.
+async function pickMapFile(placeHolder, exclude) {
+  const candidates = currentBuildDir ? mapFile.findMapFiles(currentBuildDir) : [];
+  const items = candidates
+    .filter((file) => file !== exclude)
+    .map((file) => ({
+      label: path.basename(file),
+      description: path.relative(currentBuildDir, path.dirname(file)) || '.',
+      file
+    }));
+  items.push({ label: '$(folder-opened) Browse...', description: 'pick a map file anywhere', file: null });
+
+  const picked = await vscode.window.showQuickPick(items, { placeHolder });
+  if (!picked) return null;
+  if (picked.file) return picked.file;
+
+  const chosen = await vscode.window.showOpenDialog({
+    canSelectMany: false,
+    openLabel: 'Open map file',
+    filters: { 'Linker map files': ['map', 'txt'], 'All files': ['*'] }
+  });
+  return chosen && chosen.length ? chosen[0].fsPath : null;
+}
+
+async function openMap() {
+  const file = await pickMapFile('Open a linker map file');
+  if (!file) return;
+  try {
+    const model = loadMapFile(file);
+    vscode.window.showInformationMessage(
+      path.basename(file) + ': ' + mapFile.formatBytes(model.totals.total) +
+      ' across ' + model.totals.byObject.size + ' object files (' + model.format + ')');
+  } catch (e) {
+    vscode.window.showErrorMessage('Could not read ' + path.basename(file) + ': ' + (e.message || e));
+  }
+}
+
+async function diffMaps() {
+  const before = await pickMapFile('Compare from which map file? (the older build)');
+  if (!before) return;
+  const after = await pickMapFile('Compare against which map file? (the newer build)', before);
+  if (!after) return;
+  try {
+    const comparison = compareMapFiles(before, after);
+    const { delta } = comparison.diff.total;
+    vscode.window.showInformationMessage(
+      'Size change: ' + (delta > 0 ? '+' : '') + mapFile.formatBytes(delta) +
+      ' across ' + comparison.diff.objects.length + ' object files');
+  } catch (e) {
+    vscode.window.showErrorMessage('Could not compare those map files: ' + (e.message || e));
+  }
+}
+
+function closeMap() {
+  mapProvider.clear();
+  mapView.title = 'Linker Map';
+  mapView.description = undefined;
 }
 
 module.exports = { activate, deactivate };

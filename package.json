@@ -29,6 +29,11 @@
           "id": "cmakeLinkExplorer.targets",
           "name": "Targets",
           "icon": "media/icon.svg"
+        },
+        {
+          "id": "cmakeLinkExplorer.map",
+          "name": "Linker Map",
+          "icon": "media/icon.svg"
         }
       ]
     },
@@ -36,6 +41,10 @@
       {
         "view": "cmakeLinkExplorer.targets",
         "contents": "No CMake build directory loaded yet.\n\nPick the build directory that contains CMakeCache.txt.\n[Select build directory](command:cmakeLinkExplorer.selectBuildDir)\n\nIf the build directory is already selected but empty, CMake needs to regenerate once so it can emit the File API reply.\n[Run CMake configure](command:cmakeLinkExplorer.configure)"
+      },
+      {
+        "view": "cmakeLinkExplorer.map",
+        "contents": "No linker map loaded.\n\nBuild with a map file first, for example `-Wl,-Map=out.map` (GNU ld) or `-Wl,-map,out.map` (Apple ld64).\n[Open map file](command:cmakeLinkExplorer.openMap)\n\nTo see what changed between two builds:\n[Compare two map files](command:cmakeLinkExplorer.diffMaps)"
       }
     ],
     "commands": [
@@ -77,6 +86,24 @@
         "command": "cmakeLinkExplorer.copyName",
         "title": "Copy Target Name",
         "category": "CMake Links"
+      },
+      {
+        "command": "cmakeLinkExplorer.openMap",
+        "title": "Open Map File",
+        "category": "CMake Links",
+        "icon": "$(file-binary)"
+      },
+      {
+        "command": "cmakeLinkExplorer.diffMaps",
+        "title": "Compare Two Map Files",
+        "category": "CMake Links",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "cmakeLinkExplorer.closeMap",
+        "title": "Close Map",
+        "category": "CMake Links",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -105,6 +132,21 @@
           "command": "cmakeLinkExplorer.configure",
           "when": "view == cmakeLinkExplorer.targets",
           "group": "1_actions"
+        },
+        {
+          "command": "cmakeLinkExplorer.openMap",
+          "when": "view == cmakeLinkExplorer.map",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cmakeLinkExplorer.diffMaps",
+          "when": "view == cmakeLinkExplorer.map",
+          "group": "navigation@2"
+        },
+        {
+          "command": "cmakeLinkExplorer.closeMap",
+          "when": "view == cmakeLinkExplorer.map",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -147,6 +189,21 @@
           "type": "boolean",
           "default": false,
           "description": "Show every dependency CMake reports, including ones pulled in transitively. Off by default: the reduced graph matches what target_link_libraries actually declares."
+        },
+        "cmakeLinkExplorer.demangleSymbols": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run map-file symbol names through a demangler so C++ symbols are readable. Silently skipped if the tool is not installed."
+        },
+        "cmakeLinkExplorer.demanglerCommand": {
+          "type": "string",
+          "default": "c++filt",
+          "description": "Demangler to use. Set it to your toolchain's, e.g. arm-none-eabi-c++filt."
+        },
+        "cmakeLinkExplorer.mapSymbolLimit": {
+          "type": "number",
+          "default": 200,
+          "description": "How many of the largest symbols to list from a map file."
         }
       }
     }

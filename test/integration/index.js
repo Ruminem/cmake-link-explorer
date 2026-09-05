@@ -228,6 +228,70 @@ async function runChecks() {
     assert.strictEqual(await vscode.env.clipboard.readText(), 'sqlite_wrap');
   });
 
+  // ---------------------------------------------------------- linker map tab
+
+  const mapFile = require('../../src/mapFile');
+  const maps = path.join(__dirname, '..', 'maps');
+  const mapProvider = api.getMapProvider();
+
+  await check('a GNU ld map loads through the extension', () => {
+    const model = api.loadMap(path.join(maps, 'gnu-ld-full.map'));
+    assert.strictEqual(model.format, 'gnu-ld');
+    assert.strictEqual(model.totals.total, 22352);
+    assert.strictEqual(model.regions.length, 2);
+  });
+
+  await check('the map view renders real TreeItems', () => {
+    const groups = mapProvider.getChildren();
+    assert.ok(groups.length, 'the map view produced no groups');
+    const objects = groups.find((g) => g.group === 'objects');
+    assert.ok(objects, 'no "by object" group');
+
+    const item = mapProvider.getTreeItem(objects);
+    assert.ok(item.iconPath instanceof vscode.ThemeIcon, 'group icon is not a ThemeIcon');
+    assert.strictEqual(item.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+
+    const biggest = mapProvider.getChildren(objects)[0];
+    const objectItem = mapProvider.getTreeItem(biggest);
+    assert.strictEqual(objectItem.label, 'nds_reader.o  (libnavicore.a)');
+    assert.ok(objectItem.tooltip instanceof vscode.MarkdownString, 'tooltip is not a MarkdownString');
+  });
+
+  await check('memory regions show usage against capacity', () => {
+    const regions = mapProvider.getChildren().find((g) => g.group === 'regions');
+    const flash = mapProvider.getTreeItem(mapProvider.getChildren(regions)[0]);
+    assert.strictEqual(flash.label, 'FLASH');
+    assert.strictEqual(flash.description, '3.6 KB / 512.0 KB   0.71%');
+  });
+
+  await check('an ld64 map loads and demangles C++ names', () => {
+    const model = api.loadMap(path.join(maps, 'ld64-O0.map'));
+    assert.strictEqual(model.format, 'ld64');
+    // demangleSymbols defaults to true, so this exercises the c++filt path.
+    assert.ok(model.symbols.some((s) => s.display === 'load(int)'),
+              'no demangled name found; is c++filt missing?');
+  });
+
+  await check('two maps can be compared', () => {
+    const comparison = api.compareMaps(path.join(maps, 'ld64-O0.map'),
+                                       path.join(maps, 'ld64-O2.map'));
+    assert.strictEqual(comparison.diff.total.delta, 13846 - 45117);
+    const roots = mapProvider.getChildren();
+    assert.strictEqual(mapProvider.getTreeItem(roots[0]).description,
+                       '44.1 KB → 13.5 KB   -30.5 KB');
+    const sections = mapProvider.getChildren(roots[2]);
+    assert.strictEqual(mapProvider.getTreeItem(sections[0]).label, '__text');
+  });
+
+  await check('closing the map empties the view', async () => {
+    await vscode.commands.executeCommand('cmakeLinkExplorer.closeMap');
+    assert.deepStrictEqual(mapProvider.getChildren(), []);
+  });
+
+  await check('a file that is not a map is rejected with a clear error', () => {
+    assert.throws(() => mapFile.parseFile(path.join(__dirname, 'index.js')), /Unrecognised/);
+  });
+
   log('--- results ---');
   let failed = 0;
   for (const r of results) {

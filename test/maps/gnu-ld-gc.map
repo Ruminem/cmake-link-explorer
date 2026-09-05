@@ -1,0 +1,114 @@
+Archive member included to satisfy reference by file (symbol)
+
+libnavicore.a(geo_utils.o)    app.o (geo_project)
+libnavicore.a(nds_reader.o)   app.o (nds_open)
+
+Merging object attributes
+
+
+Discarded input sections
+
+ .text          0x00000000        0x0 startup.o
+ .data          0x00000000        0x0 startup.o
+ .bss           0x00000000        0x0 startup.o
+ .text          0x00000000        0x0 app.o
+ .data          0x00000000        0x0 app.o
+ .bss           0x00000000        0x0 app.o
+ .rodata.app_banner
+                0x00000000       0x79 app.o
+ .bss.app_state
+                0x00000000      0x800 app.o
+ .text          0x00000000        0x0 map_engine.o
+ .data          0x00000000        0x0 map_engine.o
+ .bss           0x00000000        0x0 map_engine.o
+ .data.map_cache_size
+                0x00000000        0x4 map_engine.o
+ .text          0x00000000        0x0 libnavicore.a(geo_utils.o)
+ .data          0x00000000        0x0 libnavicore.a(geo_utils.o)
+ .bss           0x00000000        0x0 libnavicore.a(geo_utils.o)
+ .rodata.geo_table
+                0x00000000      0x200 libnavicore.a(geo_utils.o)
+ .text          0x00000000        0x0 libnavicore.a(nds_reader.o)
+ .data          0x00000000        0x0 libnavicore.a(nds_reader.o)
+ .bss           0x00000000        0x0 libnavicore.a(nds_reader.o)
+ .bss.nds_tile_buffer
+                0x00000000     0x4000 libnavicore.a(nds_reader.o)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x08000000         0x00080000         xr
+RAM              0x20000000         0x00020000         xrw
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+
+.text           0x08000000      0xc1a
+ *(.text.vectors)
+ .text.vectors  0x08000000       0x80 startup.o
+                0x08000000                vector_table
+ *(.text*)
+ .text.reset    0x08000080        0xa startup.o
+                0x08000080                Reset_Handler
+ .text.app_init
+                0x0800008a       0xd2 app.o
+                0x0800008a                app_init
+ .text.map_engine_load
+                0x0800015c      0x38a map_engine.o
+                0x0800015c                map_engine_load
+ .text.geo_project
+                0x080004e6      0x156 libnavicore.a(geo_utils.o)
+                0x080004e6                geo_project
+ .text.nds_open
+                0x0800063c      0x5de libnavicore.a(nds_reader.o)
+                0x0800063c                nds_open
+
+.glue_7         0x08000c1c        0x0
+ .glue_7        0x08000c1c        0x0 linker stubs
+
+.glue_7t        0x08000c1c        0x0
+ .glue_7t       0x08000c1c        0x0 linker stubs
+
+.vfp11_veneer   0x08000c1c        0x0
+ .vfp11_veneer  0x08000c1c        0x0 linker stubs
+
+.v4_bx          0x08000c1c        0x0
+ .v4_bx         0x08000c1c        0x0 linker stubs
+
+.iplt           0x08000c1c        0x0
+ .iplt          0x08000c1c        0x0 startup.o
+
+.rel.dyn        0x08000c1c        0x0
+ .rel.iplt      0x08000c1c        0x0 startup.o
+
+.rodata
+ *(.rodata*)
+
+.data
+ *(.data*)
+
+.igot.plt       0x20000000        0x0 load address 0x08000c1a
+ .igot.plt      0x20000000        0x0 startup.o
+
+.bss
+ *(.bss*)
+LOAD startup.o
+LOAD app.o
+LOAD map_engine.o
+LOAD libnavicore.a
+OUTPUT(navicore-gc.elf elf32-littlearm)
+LOAD linker stubs
+
+.ARM.attributes
+                0x00000000       0x25
+ .ARM.attributes
+                0x00000000       0x25 startup.o
+ .ARM.attributes
+                0x00000025       0x25 app.o
+ .ARM.attributes
+                0x0000004a       0x25 map_engine.o
+ .ARM.attributes
+                0x0000006f       0x25 libnavicore.a(geo_utils.o)
+ .ARM.attributes
+                0x00000094       0x25 libnavicore.a(nds_reader.o)
