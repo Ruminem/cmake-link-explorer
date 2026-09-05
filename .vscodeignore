@@ -1,3 +1,12 @@
 .vscode/**
 test/**
 **/*.map
+
+# Development-time only; nothing in the installed extension reads these.
+.gitignore
+.vscodeignore
+jsconfig.json
+
+# Notes for working on this repository, not for people installing it.
+CLAUDE.md
+NEXT.md
