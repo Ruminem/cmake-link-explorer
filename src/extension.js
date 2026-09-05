@@ -313,9 +313,14 @@ function writeChain(model, ids) {
     const label = target.name + '  [' + (SHORT_TYPE[target.type] || target.type) + ']';
     if (index === 0) {
       output.appendLine(label);
-    } else {
-      output.appendLine('  '.repeat(index) + '└─ links → ' + label);
+      return;
     }
+    // Name the target_link_libraries() that made this hop. Written as file:line
+    // so the output pane turns it into something clickable.
+    const previous = model.targets.get(ids[index - 1]);
+    const site = previous && previous.dependencySites && previous.dependencySites.get(id);
+    const where = site ? '    ' + site.file + ':' + site.line : '';
+    output.appendLine('  '.repeat(index) + '└─ links → ' + label + where);
   });
 }
 
@@ -324,7 +329,13 @@ async function openCMakeLists(node) {
   const target = provider.model.targets.get(node.id);
   if (!target) return;
 
-  const file = path.join(provider.model.sourceDir, target.sourceDir, 'CMakeLists.txt');
+  // CMake records where it saw this target declared, so use that. Searching the
+  // text only finds the call when the name is written out literally, which stops
+  // being true the moment a helper function or a variable is involved.
+  const site = target.declaration;
+  const file = site
+    ? path.join(provider.model.sourceDir, site.file)
+    : path.join(provider.model.sourceDir, target.sourceDir, 'CMakeLists.txt');
   if (!fs.existsSync(file)) {
     vscode.window.showWarningMessage('Could not find ' + file);
     return;
@@ -332,16 +343,33 @@ async function openCMakeLists(node) {
   const document = await vscode.workspace.openTextDocument(file);
   const editor = await vscode.window.showTextDocument(document, { preview: true });
 
-  // Jump to wherever the target is declared, if we can spot it.
-  const pattern = new RegExp('(add_executable|add_library)\\s*\\(\\s*' + escapeRegExp(target.name) + '\\b', 'i');
-  for (let line = 0; line < document.lineCount; line++) {
-    if (pattern.test(document.lineAt(line).text)) {
-      const position = new vscode.Position(line, 0);
-      editor.selection = new vscode.Selection(position, position);
-      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
-      break;
-    }
+  const line = site ? site.line - 1 : findDeclarationLine(document, target.name);
+  revealLine(editor, line);
+
+  // The line above is the one somebody wrote. When a helper stands between it
+  // and the add_library() itself, say where that ran rather than leaving the
+  // jump looking like it landed on the wrong command.
+  const via = target.declaredVia;
+  if (via && (via.file !== site.file || via.line !== site.line)) {
+    vscode.window.setStatusBarMessage(
+      target.name + ' is created by ' + via.command + ' at ' + via.file + ':' + via.line, 8000);
   }
+}
+
+// Only used when the codemodel gave us no location for a target.
+function findDeclarationLine(document, name) {
+  const pattern = new RegExp('(add_executable|add_library)\\s*\\(\\s*' + escapeRegExp(name) + '\\b', 'i');
+  for (let line = 0; line < document.lineCount; line++) {
+    if (pattern.test(document.lineAt(line).text)) return line;
+  }
+  return -1;
+}
+
+function revealLine(editor, line) {
+  if (typeof line !== 'number' || line < 0 || line >= editor.document.lineCount) return;
+  const position = new vscode.Position(line, 0);
+  editor.selection = new vscode.Selection(position, position);
+  editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
 }
 
 function escapeRegExp(text) {

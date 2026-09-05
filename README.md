@@ -198,10 +198,29 @@ File API의 `dependencies`는 **빌드 순서 기준 전이적 폐포**다. 실�
 - 행의 `→n ←n` — 펼치지 않고도 보이는 양방향 개수
 - 정렬은 기본이 **구조순** (실행 파일 → 의존받는 개수순). `sortTargets`로 알파벳순 전환
 - `external` — 프로젝트 밖에서 오는 라이브러리 (하나로 묶어 맨 아래)
-- 타겟 클릭 → `add_library`/`add_executable` 줄로 점프
+- 타겟 클릭 → 선언된 줄로 점프. 위치는 CMake의 `backtraceGraph`에서 읽는다
 - **Find Target** — 이름으로 찾기
-- **Why Is This Linked?** — 두 타겟 사이 최단 의존 경로를 한 홉씩 추적
+- **Why Is This Linked?** — 두 타겟 사이 최단 의존 경로를 한 홉씩 추적.
+  각 홉에 그 링크를 만든 `target_link_libraries`의 `파일:줄`이 붙는다
 - CMake 재구성 시 자동 갱신
+
+### 점프는 텍스트 검색이 아니다
+
+타겟 위치를 `add_library(<이름>` 문자열로 찾으면, 이름이 변수이거나 호출이 헬퍼
+함수 안에 있는 순간 못 찾는다. 둘 다 실제 프로젝트에서 흔하다.
+
+```cmake
+function(add_module name)
+  add_library(${name} ${name}.cpp)     # 실제 add_library
+endfunction()
+
+add_module(sensor)                     # 사람이 쓴 줄
+```
+
+`sensor`를 텍스트로 찾으면 아무것도 안 나온다. CMake는 알고 있으므로
+`backtraceGraph`에서 읽는다. **사람이 쓴 줄로 커서를 옮기고**, 그 사이에 헬퍼가
+끼어 있으면 실제 `add_library`가 어디서 돌았는지 상태 표시줄에 알려준다.
+코드모델이 위치를 주지 않는 경우에만 예전 텍스트 검색으로 떨어진다.
 
 ---
 
@@ -355,7 +374,7 @@ cat /tmp/it.log
 
 | 대상 | |
 |---|---|
-| 합성 File API 픽스처 | 20 checks |
+| 합성 File API 픽스처 + backtrace 위치 | 24 checks |
 | `test/sample-project` (실제 CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 16 checks |

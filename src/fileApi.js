@@ -221,6 +221,46 @@ function makeInternalArtifactMatcher(targets) {
  *   linkedBy: Map<string, string[]>
  * }}
  */
+// CMake records where every target and every dependency came from, and hands it
+// over as a graph of nodes each pointing at a file, a line and the command that
+// ran there. Reading it beats searching the text for "add_library(<name>",
+// which finds nothing as soon as the name is a variable or the call sits inside
+// a helper function -- both of which are ordinary in a real project.
+//
+// Returns the chain innermost-first: the add_library() itself, then whatever
+// called it. The top of each directory carries no line and is not a site, and
+// CMake starts a fresh chain per directory, so the last entry is always the
+// line somebody actually wrote.
+function backtraceChain(graph, index) {
+  if (!graph || !Array.isArray(graph.nodes) || typeof index !== 'number') return [];
+  const files = graph.files || [];
+  const commands = graph.commands || [];
+  const chain = [];
+  const seen = new Set();
+
+  for (let at = index; typeof at === 'number' && !seen.has(at); at = graph.nodes[at].parent) {
+    seen.add(at);
+    const node = graph.nodes[at];
+    if (!node) break;
+    const file = files[node.file];
+    if (typeof node.line === 'number' && typeof node.command === 'number' &&
+        typeof file === 'string') {
+      chain.push({ file, line: node.line, command: commands[node.command] || null });
+    }
+  }
+  return chain;
+}
+
+function dependencySites(target, graph) {
+  const sites = new Map();
+  for (const dependency of target.dependencies || []) {
+    if (!dependency || !dependency.id) continue;
+    const chain = backtraceChain(graph, dependency.backtrace);
+    if (chain.length) sites.set(dependency.id, chain[chain.length - 1]);
+  }
+  return sites;
+}
+
 function loadModel(buildDir, wantedConfiguration) {
   const codemodelFile = findCodemodelFile(buildDir);
   if (!codemodelFile) {
@@ -250,11 +290,19 @@ function loadModel(buildDir, wantedConfiguration) {
     } catch (e) {
       continue; // A single unreadable target should not sink the whole view.
     }
+    const chain = backtraceChain(target.backtraceGraph, target.backtrace);
     targets.set(target.id, {
       id: target.id,
       name: target.name,
       type: target.type,
       nameOnDisk: target.nameOnDisk || null,
+      // Where to jump when this target is clicked: the line somebody wrote,
+      // and -- when a helper function stands between that and the actual
+      // add_library() -- where the command really ran.
+      declaration: chain.length ? chain[chain.length - 1] : null,
+      declaredVia: chain.length > 1 ? chain[0] : null,
+      // depId -> the target_link_libraries() that pulled it in.
+      dependencySites: dependencySites(target, target.backtraceGraph),
       // Relative to the source root, e.g. "libs/engine".
       sourceDir: (target.paths && target.paths.source) || '',
       dependencyIds: (target.dependencies || []).map((d) => d.id),
@@ -346,6 +394,7 @@ module.exports = {
   hasReply,
   findCodemodelFile,
   loadModel,
+  backtraceChain,
   isLinkable,
   isLibraryFragment,
   reduceDependencies: computeDirectDependencies,

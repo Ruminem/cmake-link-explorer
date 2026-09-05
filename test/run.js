@@ -219,5 +219,59 @@ if (usingFixture) {
 }
 
 console.log('');
+console.log('--- where CMake says a target came from ---');
+
+// Text search cannot find add_library(${name}) inside a helper function, which
+// is how plenty of real projects declare targets. These graphs are the shape
+// CMake hands over, spelled out here so the checks run without a build tree.
+{
+  const graph = {
+    files: ['CMakeLists.txt', 'cmake/helpers.cmake'],
+    commands: ['add_library', 'add_module', 'target_link_libraries'],
+    nodes: [
+      { file: 0 },                                  // 0: top of the directory
+      { file: 0, line: 1, command: 0, parent: 0 },  // 1: plain add_library()
+      { file: 0, line: 9, command: 1, parent: 0 },  // 2: add_module(sensor)
+      { file: 1, line: 4, command: 0, parent: 2 },  // 3: the add_library inside it
+      { file: 0, line: 12, command: 2, parent: 0 }  // 4: target_link_libraries()
+    ]
+  };
+
+  check('a plain declaration is one hop', () => {
+    assert.deepStrictEqual(fileApi.backtraceChain(graph, 1),
+                           [{ file: 'CMakeLists.txt', line: 1, command: 'add_library' }]);
+  });
+
+  check('a target made inside a helper reports both ends', () => {
+    const chain = fileApi.backtraceChain(graph, 3);
+    // Innermost first: the add_library that ran, then the call somebody wrote.
+    assert.deepStrictEqual(chain[0], { file: 'cmake/helpers.cmake', line: 4, command: 'add_library' });
+    assert.deepStrictEqual(chain[chain.length - 1],
+                           { file: 'CMakeLists.txt', line: 9, command: 'add_module' });
+  });
+
+  check('the top of a directory is not a site', () => {
+    assert.deepStrictEqual(fileApi.backtraceChain(graph, 0), []);
+    // Every entry has to carry somewhere to jump to.
+    for (const index of [0, 1, 2, 3, 4]) {
+      for (const site of fileApi.backtraceChain(graph, index)) {
+        assert.ok(typeof site.file === 'string' && site.line > 0, JSON.stringify(site));
+      }
+    }
+  });
+
+  check('a malformed graph yields nothing rather than throwing', () => {
+    assert.deepStrictEqual(fileApi.backtraceChain(null, 0), []);
+    assert.deepStrictEqual(fileApi.backtraceChain(graph, undefined), []);
+    assert.deepStrictEqual(fileApi.backtraceChain(graph, 99), []);
+    assert.deepStrictEqual(fileApi.backtraceChain({ nodes: [{ file: 7, line: 1, command: 0 }] }, 0), []);
+    // A parent cycle must not spin forever.
+    const looped = { files: ['a'], commands: ['c'], nodes: [{ file: 0, line: 1, command: 0, parent: 1 },
+                                                           { file: 0, line: 2, command: 0, parent: 0 }] };
+    assert.strictEqual(fileApi.backtraceChain(looped, 0).length, 2);
+  });
+}
+
+console.log('');
 console.log(failures === 0 ? 'all checks passed' : failures + ' check(s) failed');
 process.exit(failures === 0 ? 0 : 1);
