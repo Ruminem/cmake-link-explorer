@@ -315,15 +315,20 @@ check('unchanged rows are left out', () => {
 console.log('');
 console.log('--- joining a map to CMake targets ---');
 
-// Needs the real build tree from test/bootstrap.sh, since the join is keyed on
-// what CMake says each target produces.
+// The join is keyed on what CMake says each target produces, so the target side
+// has to name its artifacts the same way the map does. sample-app.map is a real
+// ld64 map and says "librender_core.dylib"; a locally configured tree would say
+// .dll on Windows and .so on Linux, so keying off one would tie this block to
+// whichever machine ran it. The synthetic fixture hardcodes the macOS names that
+// go with the committed map, which keeps the join deterministic everywhere - and
+// lets it run without CMake installed. Real CMake output is covered by run.js.
 const fileApi = require('../src/fileApi');
-const sampleBuild = path.join(__dirname, 'sample-project', 'build');
+const fixtureBuild = path.join(__dirname, 'fixture', 'build');
 
-if (!fileApi.isBuildDir(sampleBuild)) {
-  console.log('  (skipped: run ./test/bootstrap.sh to create test/sample-project/build)');
+if (!fileApi.isBuildDir(fixtureBuild)) {
+  console.log('  (skipped: run python3 test/make-fixture.py to create test/fixture)');
 } else {
-  const targets = fileApi.loadModel(sampleBuild, '');
+  const targets = fileApi.loadModel(fixtureBuild, '');
   const sampleMap = mapFile.parseFile(fixture('sample-app'));
   const joined = mapFile.matchTargets(targets, sampleMap);
   const byName = new Map(Array.from(targets.targets.values()).map((t) => [t.name, t]));
