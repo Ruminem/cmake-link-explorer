@@ -12,6 +12,10 @@ class TreeItem {
 }
 
 class ThemeIcon {
+  constructor(id, color) { this.id = id; this.color = color; }
+}
+
+class ThemeColor {
   constructor(id) { this.id = id; }
 }
 
@@ -35,6 +39,7 @@ const overrides = {};
 module.exports = {
   TreeItem,
   ThemeIcon,
+  ThemeColor,
   MarkdownString,
   EventEmitter,
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },

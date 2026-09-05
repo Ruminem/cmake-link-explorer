@@ -16,6 +16,7 @@ let output = null;
 let statusItem = null;
 let replyWatcher = null;
 let currentBuildDir = null;
+let currentMapModel = null;
 
 function config() {
   return vscode.workspace.getConfiguration('cmakeLinkExplorer');
@@ -79,7 +80,9 @@ function activate(context) {
     getBuildDirectory: () => currentBuildDir,
     getMapProvider: () => mapProvider,
     loadMap: loadMapFile,
-    compareMaps: compareMapFiles
+    compareMaps: compareMapFiles,
+    closeMap: closeMap,
+    getSizes: () => provider.sizes
   };
 }
 
@@ -123,6 +126,7 @@ async function reload() {
   try {
     const model = fileApi.loadModel(buildDir, config().get('configuration', ''));
     provider.setModel(model);
+    applySizesToTargets();
     watchReply(buildDir);
     updateStatus();
   } catch (e) {
@@ -346,13 +350,32 @@ function loadMapFile(filePath) {
   mapProvider.showMap(model);
   mapView.title = path.basename(filePath);
   mapView.description = model.format + '  ·  ' + mapFile.formatBytes(model.totals.total);
+
+  currentMapModel = model;
+  applySizesToTargets();
   return model;
+}
+
+// The two views describe the same build, so a loaded map also gives every CMake
+// target its share of the image. Re-run whenever either side changes.
+function applySizesToTargets() {
+  if (!currentMapModel || !provider.model) {
+    provider.setSizes(null);
+    return null;
+  }
+  const sizes = mapFile.matchTargets(provider.model, currentMapModel);
+  provider.setSizes(sizes);
+  return sizes;
 }
 
 function compareMapFiles(beforePath, afterPath) {
   const before = mapFile.parseFile(beforePath);
   const after = mapFile.parseFile(afterPath);
   mapProvider.showDiff(before, after);
+  // A diff describes two images at once, so a single size per target would be
+  // ambiguous; drop the column until one map is open again.
+  currentMapModel = null;
+  applySizesToTargets();
   mapView.title = 'diff';
   mapView.description = path.basename(beforePath) + ' → ' + path.basename(afterPath);
   return mapProvider.comparison;
@@ -413,6 +436,8 @@ async function diffMaps() {
 
 function closeMap() {
   mapProvider.clear();
+  currentMapModel = null;
+  applySizesToTargets();
   mapView.title = 'Linker Map';
   mapView.description = undefined;
 }

@@ -270,6 +270,106 @@ check('unchanged rows are left out', () => {
 });
 
 console.log('');
+console.log('--- joining a map to CMake targets ---');
+
+// Needs the real build tree from test/bootstrap.sh, since the join is keyed on
+// what CMake says each target produces.
+const fileApi = require('../src/fileApi');
+const sampleBuild = path.join(__dirname, 'sample-project', 'build');
+
+if (!fileApi.isBuildDir(sampleBuild)) {
+  console.log('  (skipped: run ./test/bootstrap.sh to create test/sample-project/build)');
+} else {
+  const targets = fileApi.loadModel(sampleBuild, '');
+  const naviMap = mapFile.parseFile(fixture('sample-navi_app'));
+  const joined = mapFile.matchTargets(targets, naviMap);
+  const byName = new Map(Array.from(targets.targets.values()).map((t) => [t.name, t]));
+  const sizeOf = (name) => joined.get(byName.get(name).id);
+
+  check('a static library is matched through its archive', () => {
+    const row = sizeOf('nds_reader');
+    assert.ok(row, 'nds_reader was not matched');
+    assert.strictEqual(row.objects.length, 1);
+    assert.ok(/libnds_reader\.a\(nds_reader\.cpp\.o\)$/.test(row.objects[0]), row.objects[0]);
+    assert.ok(row.size > 500, 'expected a real size, got ' + row.size);
+  });
+
+  check("an executable is matched through CMake's object directory", () => {
+    const row = sizeOf('navi_app');
+    assert.ok(row, 'navi_app was not matched');
+    assert.ok(/navi_app\.dir\//.test(row.objects[0]), row.objects[0]);
+  });
+
+  check('a shared library is flagged as dynamic', () => {
+    const row = sizeOf('ui_core');
+    assert.ok(row, 'ui_core was not matched');
+    assert.strictEqual(row.dynamic, true);
+  });
+
+  check('static libraries are not flagged as dynamic', () => {
+    for (const name of ['nds_reader', 'sqlite_wrap', 'dlt_wrapper', 'map_engine']) {
+      assert.strictEqual(sizeOf(name).dynamic, false, name + ' should be static');
+    }
+  });
+
+  check('a target absent from this image is simply not matched', () => {
+    // map_test and nds_test are separate executables, and geo_utils resolved out
+    // of libui_core.dylib rather than being pulled from its archive.
+    assert.strictEqual(sizeOf('map_test'), undefined);
+    assert.strictEqual(sizeOf('nds_test'), undefined);
+    assert.strictEqual(sizeOf('geo_utils'), undefined);
+  });
+
+  check('matched sizes never exceed the image', () => {
+    const total = [...joined.values()].reduce((sum, row) => sum + row.size, 0);
+    assert.ok(total <= naviMap.totals.total,
+              total + ' attributed but the image is only ' + naviMap.totals.total);
+  });
+
+  check('the tree shows the size next to the link counts', () => {
+    const { TargetTreeProvider } = require('../src/tree');
+    const view = new TargetTreeProvider();
+    view.setModel(targets);
+    view.setSizes(joined);
+
+    const roots = view.getChildren();
+    const item = (name) =>
+      view.getTreeItem(roots.find((n) => targets.targets.get(n.id).name === name));
+    assert.strictEqual(item('nds_reader').description, '→1 ←2   1.0 KB');
+    assert.strictEqual(item('ui_core').description, '→1 ←1   dynamic');
+    assert.strictEqual(item('geo_utils').description, '←2');
+  });
+
+  check('dropping the map removes the size column again', () => {
+    const { TargetTreeProvider } = require('../src/tree');
+    const view = new TargetTreeProvider();
+    view.setModel(targets);
+    view.setSizes(joined);
+    view.setSizes(null);
+    const roots = view.getChildren();
+    const node = roots.find((n) => targets.targets.get(n.id).name === 'nds_reader');
+    assert.strictEqual(view.getTreeItem(node).description, '→1 ←2');
+  });
+
+  check('sorting by size puts the heaviest target first', () => {
+    const { TargetTreeProvider } = require('../src/tree');
+    const stub = require('./vscode-stub');
+    const view = new TargetTreeProvider();
+    view.setModel(targets);
+    view.setSizes(joined);
+    stub.__setConfig('sortTargets', 'size');
+    try {
+      const names = view.getChildren().map((n) => targets.targets.get(n.id).name);
+      assert.strictEqual(names[0], 'nds_reader');
+      // Unmatched targets sort last rather than pretending to be zero bytes.
+      assert.ok(names.indexOf('geo_utils') > names.indexOf('dlt_wrapper'));
+    } finally {
+      stub.__clearConfig();
+    }
+  });
+}
+
+console.log('');
 console.log('--- tree ---');
 
 const provider = new MapTreeProvider();

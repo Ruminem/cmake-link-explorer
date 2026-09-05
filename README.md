@@ -14,21 +14,54 @@ C++ 빌드의 **연결 구조와 크기**를 VS Code 안에서 보는 익스텐�
 # Targets
 
 ```
-TARGETS
-├── navi_app                exe
-│   ├── links →             3
-│   │   ├── dlt_wrapper     static
-│   │   ├── map_engine      static
-│   │   └── ui_core         shared
-│   └── external            3
-│       ├── -lsqlite3
-│       ├── -ldlt
-│       └── -lpthread
-└── geo_utils               static
-    └── linked by ←         2
-        ├── map_engine      static
-        └── ui_core         shared
+TARGETS                     실행 파일이 먼저, 그다음 의존받는 순
+🚀 navi_app          →3
+📦 map_engine        →2 ←2      ← 펼치지 않아도 허브라는 게 보인다
+📦 geo_utils            ←2      ← 아무것도 링크 안 하는 말단
+📦 sqlite_wrap          ←1
+
+▾ 📦 map_engine      →2 ←2
+     → geo_utils     static           파랑 화살표 = 얘가 링크하는 것
+     → nds_reader    static   →1
+     ← map_test      exe              주황 화살표 = 얘를 링크하는 것
+     ← navi_app      exe
 ```
+
+행 하나에 양방향 개수가 다 들어 있다.
+
+- `→`만 있다 = **최상위**, 아무도 안 쓴다 (보통 실행 파일)
+- `←`만 있다 = **말단 라이브러리**, 깨지면 위험한 것
+- 둘 다 크다 = **중간 허브**
+
+펼치면 양방향이 한 번에 나온다. 폴더를 거치지 않으므로 클릭 한 번이면 된다.
+자식을 계속 펼치면 그 방향으로만 체인을 따라간다.
+
+### 맵을 열면 크기가 붙는다
+
+Linker Map 탭에서 맵 파일을 열면, 같은 행에 **그 타겟이 바이너리에서 차지하는
+크기**가 함께 나온다.
+
+```
+🚀 navi_app          →3        112 B
+📦 nds_reader        →1 ←2     1.0 KB
+📦 sqlite_wrap          ←1      277 B
+📦 geo_utils            ←2              ← 이 이미지에 없음
+📚 ui_core           →1 ←1     dynamic
+```
+
+CMake가 알려주는 `nameOnDisk`(`libnds_reader.a`)를 맵 파일의 이름과 맞춘다.
+실행 파일은 CMake가 오브젝트를 `<타겟>.dir/`에 넣는 규칙으로 찾는다.
+
+그래서 두 질문을 한 줄에서 같이 볼 수 있다.
+
+- `nds_reader` — **2개만 쓰는데 1.0 KB**. 정리 후보
+- `geo_utils` — **2개가 쓰는데 이미지에 없다.** `ui_core`가 셰어드 라이브러리라
+  거기서 심볼이 해결된 것. 이런 건 맵을 직접 읽지 않으면 모른다
+- `ui_core` — 동적 링크라 이미지에 없다. 임포트 스텁 몇십 바이트를 크기로
+  표시하면 자릿수가 틀리므로 `dynamic`이라고만 쓴다
+
+`sortTargets`를 `size`로 두면 **"쓰는 곳은 적은데 무거운 것"**을 위에서부터
+찾을 수 있다. 바이너리 다이어트할 때 제일 먼저 하는 일이다.
 
 ## 어떻게 동작하나
 
@@ -65,8 +98,9 @@ File API의 `dependencies`는 **빌드 순서 기준 전이적 폐포**다. 실�
 
 ## 기능
 
-- `links →` / `linked by ←` — 노드를 펼치면 그 방향으로 체인을 따라간다
-- `external` — 프로젝트 밖에서 오는 라이브러리
+- 행의 `→n ←n` — 펼치지 않고도 보이는 양방향 개수
+- 정렬은 기본이 **구조순** (실행 파일 → 의존받는 개수순). `sortTargets`로 알파벳순 전환
+- `external` — 프로젝트 밖에서 오는 라이브러리 (하나로 묶어 맨 아래)
 - 타겟 클릭 → `add_library`/`add_executable` 줄로 점프
 - **Find Target** — 이름으로 찾기
 - **Why Is This Linked?** — 두 타겟 사이 최단 의존 경로를 한 홉씩 추적
@@ -177,6 +211,7 @@ ln -s "$(pwd)" ~/.vscode/extensions/cmake-link-explorer
 | `cmakeLinkExplorer.showUtilityTargets` | `false` | UTILITY 타겟 표시 |
 | `cmakeLinkExplorer.showExternalLibraries` | `true` | 외부 라이브러리 표시 |
 | `cmakeLinkExplorer.showTransitiveDependencies` | `false` | 축약하지 않고 전체 폐포 표시 |
+| `cmakeLinkExplorer.sortTargets` | `structure` | `structure` = 실행 파일 먼저, 그다음 의존받는 순 / `size` = 이미지 기여 크기순 (맵 필요) / `name` = 알파벳순 |
 | `cmakeLinkExplorer.demangleSymbols` | `true` | C++ 심볼 디맹글링 |
 | `cmakeLinkExplorer.demanglerCommand` | `c++filt` | 사용할 디맹글러 |
 | `cmakeLinkExplorer.mapSymbolLimit` | `200` | 표시할 최대 심볼 수 |
@@ -224,13 +259,12 @@ cat /tmp/it.log
 | 합성 File API 픽스처 | 19 checks |
 | `test/sample-project` (실제 CMake 4.4) | 17 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
-| 타겟 트리 렌더링 | 12 checks |
-| 맵 파서 + 맵 트리 (GNU ld, ld64 실측) | 37 checks |
-| VS Code 확장 호스트 (1.136) | 26 checks |
+| 타겟 트리 렌더링 | 15 checks |
+| 맵 파서 + 맵 트리 + 타겟 조인 | 46 checks |
+| VS Code 확장 호스트 (1.136) | 30 checks |
 
 # 앞으로
 
 - LLVM lld 맵 포맷 (실물 샘플이 생기면)
 - 그래프 뷰 (웹뷰 + 노드 드래그)
-- 맵의 오브젝트 ↔ Targets 탭의 CMake 타겟 연결
 - 순환 의존 / 미사용 타겟 표시

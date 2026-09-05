@@ -204,6 +204,21 @@
           "type": "number",
           "default": 200,
           "description": "How many of the largest symbols to list from a map file."
+        },
+        "cmakeLinkExplorer.sortTargets": {
+          "type": "string",
+          "enum": [
+            "structure",
+            "size",
+            "name"
+          ],
+          "default": "structure",
+          "enumDescriptions": [
+            "Executables first, then libraries ordered by how many targets depend on them.",
+            "Largest contribution to the linked image first. Needs a linker map to be open.",
+            "Plain alphabetical order."
+          ],
+          "description": "How the target list is ordered. 'structure' surfaces what the project produces and what everything leans on; 'size' needs an open linker map and finds the heavy targets; 'name' is a flat alphabetical list."
         }
       }
     }

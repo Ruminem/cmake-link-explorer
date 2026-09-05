@@ -132,8 +132,9 @@ async function runChecks() {
   await check('the tree shows only the direct dependencies', () => {
     const roots = provider.getChildren();
     const node = roots.find((n) => model.targets.get(n.id).name === 'navi_app');
-    const group = provider.getChildren(node).find((g) => g.group === 'forward');
-    const shown = provider.getChildren(group).map((n) => model.targets.get(n.id).name).sort();
+    const shown = provider.getChildren(node)
+      .filter((n) => n.direction === 'forward')
+      .map((n) => model.targets.get(n.id).name).sort();
     assert.deepStrictEqual(shown, ['dlt_wrapper', 'map_engine', 'ui_core']);
   });
 
@@ -187,19 +188,40 @@ async function runChecks() {
     const node = roots.find((n) => model.targets.get(n.id).name === 'geo_utils');
     const item = provider.getTreeItem(node);
     assert.strictEqual(item.label, 'geo_utils');
+    assert.strictEqual(item.description, '←2');
     assert.strictEqual(item.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
     assert.ok(item.iconPath instanceof vscode.ThemeIcon, 'icon is not a ThemeIcon');
     assert.ok(item.tooltip instanceof vscode.MarkdownString, 'tooltip is not a MarkdownString');
   });
 
-  await check('the reverse group is labelled and counted', () => {
+  await check('both directions are counted on the row itself', () => {
     const roots = provider.getChildren();
-    const node = roots.find((n) => model.targets.get(n.id).name === 'geo_utils');
-    const group = provider.getChildren(node).find((g) => g.group === 'reverse');
-    assert.ok(group, 'no reverse group for geo_utils');
-    const item = provider.getTreeItem(group);
-    assert.strictEqual(item.label, 'linked by ←');
-    assert.strictEqual(item.description, '2');
+    const node = roots.find((n) => model.targets.get(n.id).name === 'map_engine');
+    assert.strictEqual(provider.getTreeItem(node).description, '→2 ←2');
+
+    const children = provider.getChildren(node);
+    assert.deepStrictEqual(
+      children.map((c) => c.direction + ':' + model.targets.get(c.id).name),
+      ['forward:geo_utils', 'forward:nds_reader', 'reverse:map_test', 'reverse:navi_app']);
+  });
+
+  await check('executables sort ahead of the libraries everything leans on', () => {
+    const names = provider.getChildren().map((n) => model.targets.get(n.id).name);
+    assert.deepStrictEqual(names.slice(0, 3), ['map_test', 'navi_app', 'nds_test']);
+    assert.ok(names.indexOf('geo_utils') < names.indexOf('dlt_wrapper'),
+              'geo_utils has more dependents and should sort higher');
+  });
+
+  await check('direction arrows are real coloured ThemeIcons', () => {
+    const roots = provider.getChildren();
+    const node = roots.find((n) => model.targets.get(n.id).name === 'map_engine');
+    const children = provider.getChildren(node);
+    const forward = provider.getTreeItem(children[0]);
+    const reverse = provider.getTreeItem(children.find((c) => c.direction === 'reverse'));
+    assert.ok(forward.iconPath instanceof vscode.ThemeIcon);
+    assert.ok(forward.iconPath.color instanceof vscode.ThemeColor);
+    assert.strictEqual(forward.iconPath.id, 'arrow-small-right');
+    assert.strictEqual(reverse.iconPath.id, 'arrow-small-left');
   });
 
   await check('openCMakeLists jumps to the add_library line', async () => {
@@ -283,9 +305,32 @@ async function runChecks() {
     assert.strictEqual(mapProvider.getTreeItem(sections[0]).label, '__text');
   });
 
+  await check('a loaded map gives every CMake target its share of the image', () => {
+    api.loadMap(path.join(maps, 'sample-navi_app.map'));
+    const sizes = api.getSizes();
+    assert.ok(sizes, 'no sizes were attached to the targets');
+
+    const byName = new Map(Array.from(model.targets.values()).map((t) => [t.name, t]));
+    const ndsReader = sizes.get(byName.get('nds_reader').id);
+    assert.ok(ndsReader && ndsReader.size > 500, 'nds_reader has no size');
+    assert.strictEqual(sizes.get(byName.get('ui_core').id).dynamic, true);
+
+    const roots = provider.getChildren();
+    const item = (name) =>
+      provider.getTreeItem(roots.find((n) => model.targets.get(n.id).name === name));
+    assert.strictEqual(item('nds_reader').description, '→1 ←2   1.0 KB');
+    assert.strictEqual(item('ui_core').description, '→1 ←1   dynamic');
+  });
+
+  await check('comparing two maps drops the size column', () => {
+    api.compareMaps(path.join(maps, 'ld64-O0.map'), path.join(maps, 'ld64-O2.map'));
+    assert.strictEqual(api.getSizes(), null, 'a diff cannot give one size per target');
+  });
+
   await check('closing the map empties the view', async () => {
     await vscode.commands.executeCommand('cmakeLinkExplorer.closeMap');
     assert.deepStrictEqual(mapProvider.getChildren(), []);
+    assert.strictEqual(api.getSizes(), null, 'sizes should go away with the map');
   });
 
   await check('a file that is not a map is rejected with a clear error', () => {

@@ -1,1 +1,2 @@
-int main() { return 0; }
+#include "nds_reader.h"
+int main() { return nds_reader::OpenDatabase("test.ndsdb"); }

@@ -378,6 +378,58 @@ function findMapFiles(root, maxDepth) {
   return found.sort();
 }
 
+// ---------------------------------------------------------- join with targets
+
+/**
+ * Works out how much of the linked image each CMake target accounts for.
+ *
+ * The two halves of this extension describe the same thing from different
+ * sides: CMake knows target "map_engine" produces libmap_engine.a, and the map
+ * file knows libmap_engine.a(map_engine.cpp.o) takes 17.5 KB. Three things let
+ * them be matched up:
+ *
+ *   1. an archive named after the target's nameOnDisk
+ *   2. an object file that is the target's own artifact (a shared library shows
+ *      up this way and contributes nothing, because it is not in the image)
+ *   3. CMake's own layout, which puts a target's objects in <target>.dir/
+ *
+ * @returns {Map<string, {size: number, objects: string[], dynamic: boolean}>}
+ *          keyed by target id; targets absent from the map are simply missing.
+ */
+function matchTargets(targetModel, mapModel) {
+  const byArtifact = new Map();
+  const byObjectDir = new Map();
+  for (const target of targetModel.targets.values()) {
+    if (target.nameOnDisk) byArtifact.set(target.nameOnDisk, target);
+    byObjectDir.set(target.name + '.dir', target);
+  }
+
+  const DYNAMIC_TYPES = new Set(['SHARED_LIBRARY', 'MODULE_LIBRARY']);
+  const matched = new Map();
+
+  for (const object of mapModel.totals.byObject.values()) {
+    let target = null;
+
+    if (object.archive) target = byArtifact.get(path.basename(object.archive));
+    if (!target) target = byArtifact.get(path.basename(object.object));
+    if (!target) {
+      const dir = /(?:^|\/)([^/]+)\.dir(?:\/|$)/.exec(object.object);
+      if (dir) target = byObjectDir.get(dir[1] + '.dir');
+    }
+    if (!target) continue;
+
+    let row = matched.get(target.id);
+    if (!row) {
+      row = { size: 0, objects: [], dynamic: DYNAMIC_TYPES.has(target.type) };
+      matched.set(target.id, row);
+    }
+    row.size += object.size;
+    row.objects.push(object.key);
+  }
+
+  return matched;
+}
+
 // ---------------------------------------------------------------- diff
 
 /**
@@ -442,6 +494,7 @@ module.exports = {
   parseFile,
   findMapFiles,
   demangle,
+  matchTargets,
   diff,
   summarise,
   splitOrigin,
