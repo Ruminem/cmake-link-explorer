@@ -43,7 +43,7 @@ Nothing to build, no dependencies. It is plain JavaScript.
 
 ## Windows, double-click
 
-Grab `cmake-link-explorer-0.1.0-windows.zip` from
+Grab `cmake-link-explorer-<version>-windows.zip` from
 [Releases](https://github.com/Ruminem/cmake-link-explorer/releases), unzip it and
 run `install.cmd`. It locates VS Code itself, so **`code` does not have to be on
 PATH** — right after installing VS Code the terminal is usually still holding the
@@ -56,7 +56,7 @@ Grab the `.vsix` from
 `...` → **Install from VSIX** in the Extensions view, or:
 
 ```
-code --install-extension cmake-link-explorer-0.1.0.vsix
+code --install-extension cmake-link-explorer-<version>.vsix
 ```
 
 To build one yourself from the repository (needs Node; the extension itself
