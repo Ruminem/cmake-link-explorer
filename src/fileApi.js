@@ -98,6 +98,27 @@ function hasReply(buildDir) {
 // The reply directory holds an index plus one file per object. Prefer our own
 // client entry; fall back to any codemodel file, since another client (CMake Tools,
 // for instance) may already have asked for one and we can reuse it.
+// A workspace can hold more than one build tree. Taking whichever the directory
+// walk reached first answered questions from a tree nobody had configured in
+// hours -- in this repository the synthetic test fixture wins that race, and it
+// even names the sample project as its source directory, so the answers looked
+// like they were about the CMakeLists on screen. The tree configured most
+// recently is the one being worked in.
+function pickBuildDir(dirs) {
+  const withReply = (dirs || []).filter(hasReply);
+  if (!withReply.length) return (dirs && dirs.length) ? dirs[0] : null;
+  let best = withReply[0];
+  let bestAt = -1;
+  for (const dir of withReply) {
+    const at = replyWrittenAt(path.join(apiRoot(dir), 'reply'));
+    if (at > bestAt) {
+      bestAt = at;
+      best = dir;
+    }
+  }
+  return best;
+}
+
 function findCodemodelFile(buildDir) {
   const replyDir = path.join(apiRoot(buildDir), 'reply');
   let names;
@@ -838,6 +859,7 @@ module.exports = {
   LINKABLE_TYPES,
   isBuildDir,
   findBuildDirs,
+  pickBuildDir,
   ensureQuery,
   hasReply,
   findCodemodelFile,

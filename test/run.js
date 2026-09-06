@@ -600,6 +600,28 @@ check('inputs are absolute and the build tree is left out', () => {
   }
 });
 
+check('the most recently configured build tree wins discovery', () => {
+  // This repository holds two: the synthetic fixture and the real sample
+  // project. Taking whichever the walk reached first meant answering from a
+  // tree configured hours earlier -- and because the fixture names the sample
+  // project as its source directory, the answers looked like they were about
+  // the CMakeLists on screen. It reported "already links render_core" for a
+  // line the user had just deleted, with no warning, because a fixture with no
+  // backtraceGraph has nothing to check freshness against.
+  const roots = [path.join(__dirname, '..')];
+  const found = fileApi.findBuildDirs(roots).filter((d) => fileApi.hasReply(d));
+  if (found.length < 2) return;
+  const at = (dir) => fs.statSync(fileApi.findCodemodelFile(dir)).mtimeMs;
+  const newest = found.slice().sort((a, b) => at(b) - at(a))[0];
+  assert.strictEqual(fileApi.pickBuildDir(found), newest);
+});
+
+check('discovery still returns something when no tree has a reply', () => {
+  assert.strictEqual(fileApi.pickBuildDir(['/no/such/build']), '/no/such/build');
+  assert.strictEqual(fileApi.pickBuildDir([]), null);
+  assert.strictEqual(fileApi.pickBuildDir(undefined), null);
+});
+
 check('the configure time comes from the newest reply file, not the codemodel', () => {
   // CMake names reply files after a hash of their content and leaves an
   // unchanged one alone, so the codemodel keeps an old mtime across a configure

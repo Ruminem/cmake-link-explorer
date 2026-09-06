@@ -172,6 +172,10 @@ async function reload() {
   }
 }
 
+// What discovery turned up last time, so the status bar can say when the choice
+// was not the only one available.
+let discoveredBuildDirs = [];
+
 function resolveBuildDir() {
   const configured = (config().get('buildDirectory', '') || '').trim();
   if (configured) {
@@ -187,12 +191,12 @@ function resolveBuildDir() {
   if (!roots.length) return null;
 
   const found = fileApi.findBuildDirs(roots);
+  discoveredBuildDirs = found;
   if (!found.length) return null;
 
-  // Prefer a build tree that already has a reply, so we show something useful
-  // straight away instead of asking for a reconfigure of an unrelated tree.
-  const withReply = found.filter((dir) => fileApi.hasReply(dir));
-  return (withReply.length ? withReply : found)[0];
+  // Prefer a tree that already has a reply, and among those the one configured
+  // most recently -- see fileApi.pickBuildDir for why the walk order will not do.
+  return fileApi.pickBuildDir(found);
 }
 
 function firstWorkspaceRoot() {
@@ -223,11 +227,21 @@ function updateStatus() {
     provider.model.buildDir +
     '\nconfiguration: ' +
     provider.model.configuration +
+    (discoveredBuildDirs.length > 1
+      ? '\n' + discoveredBuildDirs.length +
+        ' build trees found here; using the one configured most recently'
+      : '') +
     (stale.length
       ? '\n\nEdited since CMake last configured:\n  ' +
         stale.map((f) => path.basename(f)).join('\n  ') +
         '\nWhat is shown is the previous configure.'
-      : '');
+      : '') +
+    // Saying nothing here would read as "up to date" when the truth is
+    // that there is no way to tell.
+    ((provider.model.cmakeInputs || []).length
+      ? ''
+      : '\n\nThis reply carries no backtraceGraph, so edits to' +
+        ' CMakeLists.txt cannot be detected.');
   statusItem.show();
 }
 
