@@ -219,7 +219,7 @@ function updateStatus() {
     statusItem.hide();
     return;
   }
-  const count = provider.visibleTargets().length;
+  const count = provider.visibleCount();
   const stale = staleFiles().all;
   statusItem.text = (stale.length ? '$(warning) ' : '$(circuit-board) ') + count + ' targets';
   statusItem.tooltip =
@@ -487,7 +487,7 @@ async function openCMakeLists(node) {
   // and the add_library() itself, say where that ran rather than leaving the
   // jump looking like it landed on the wrong command.
   const via = target.declaredVia;
-  if (via && (via.file !== site.file || via.line !== site.line)) {
+  if (via && site && (via.file !== site.file || via.line !== site.line)) {
     vscode.window.setStatusBarMessage(
       target.name + ' is created by ' + via.command + ' at ' + via.file + ':' + via.line, 8000);
   }
@@ -561,7 +561,7 @@ class LinkIncludeActionProvider {
 
     const direct = result.status === 'needs-link';
     const action = new vscode.CodeAction(
-      (direct ? 'Link ' : 'Link ') + result.provider.name + ' from ' + result.from.name +
+      'Link ' + result.provider.name + ' from ' + result.from.name +
         (direct ? '' : ' (currently only transitive)'),
       vscode.CodeActionKind.QuickFix);
     action.command = {
@@ -936,8 +936,15 @@ async function applyLink(result) {
   editor.selection = new vscode.Selection(new vscode.Position(line, 0), new vscode.Position(line, 0));
   editor.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenter);
 
+  // When a call was already there but could not be extended, say so -- a second
+  // target_link_libraries() appearing next to one that looks like it would have
+  // done needs a reason attached to it.
+  const why = plan.insteadOfAppending
+    ? '  Added as a separate call because ' + plan.insteadOfAppending + '.'
+    : '';
   vscode.window.showInformationMessage(
-    plan.preview + '  —  saved. Re-run CMake for the change to take effect.', 'Run CMake configure')
+    plan.preview + '  —  saved.' + why + '  Re-run CMake for the change to take effect.',
+    'Run CMake configure')
     .then((choice) => { if (choice) runConfigure(); });
 }
 

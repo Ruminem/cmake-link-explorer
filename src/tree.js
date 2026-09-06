@@ -106,6 +106,22 @@ class TargetTreeProvider {
    * most things lean on. Alphabetical is available but makes a large project
    * look like an undifferentiated wall of names.
    */
+  /**
+   * How many rows the tree would show. visibleTargets() sorts, and the sort is
+   * wasted when the caller only wants the count -- which is all the status bar
+   * ever wanted. Five milliseconds a call at two thousand targets, and it now
+   * refreshes on a timer while the user types.
+   */
+  visibleCount() {
+    if (!this.model) return 0;
+    if (this.showUtility) return this.model.targets.size;
+    let count = 0;
+    for (const target of this.model.targets.values()) {
+      if (fileApi.isLinkable(target)) count++;
+    }
+    return count;
+  }
+
   visibleTargets() {
     if (!this.model) return [];
     const all = Array.from(this.model.targets.values());

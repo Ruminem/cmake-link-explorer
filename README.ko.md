@@ -131,6 +131,13 @@ target_link_libraries(store_test PRIVATE store_reader log_wrapper)
 `add_library`/`add_executable` 바로 다음에 새로 만듦. 같은 파일의 다른
 타겟은 건드리지 않음.
 
+**단, 붙이는 게 맞을 때만 붙임.** `if(WIN32)` 안에 있는 호출에 붙이면 윈도우에서만
+링크되고, `INTERFACE` 키워드 뒤에 붙으면 그 타겟 자신은 아예 링크하지 않음 — 둘 다
+겉보기엔 고쳐진 것처럼 보임. 그래서 호출이 블록 안에 있거나 마지막 섹션의 키워드가
+필요한 것과 다르면, 붙이지 않고 **별도 호출을 새로 씀.** 알림이 그 이유를 같이
+알려줌. 기존 호출이 키워드 없는 옛 형식이면 CMake가 두 형식을 섞는 걸 거부하므로,
+configure도 안 될 편집을 보여주는 대신 손으로 넣으라고 함.
+
 **키워드는 어디서 include 했느냐로 정해짐.**
 
 | include 위치 | 키워드 | 이유 |
@@ -677,12 +684,12 @@ currently only supported if no other instance of Code is running` 로 거부당�
 
 | 대상 | |
 |---|---|
-| 합성 File API 픽스처 + backtrace + 순환/미사용 + 트리 비교 + 스냅샷 신선도 | 57 checks |
+| 합성 File API 픽스처 + backtrace + 순환/미사용 + 트리 비교 + 스냅샷 신선도 | 61 checks |
 | `test/sample-project` (실제 CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
-| 타겟 트리 렌더링 | 16 checks |
+| 타겟 트리 렌더링 | 18 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 64 checks |
-| include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 40 checks |
+| include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 48 checks |
 | VS Code 확장 호스트 (1.136, macOS + Windows) | 40 checks |
 
 # 성능

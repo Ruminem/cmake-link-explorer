@@ -407,5 +407,108 @@ check('nested parentheses do not confuse the matcher', () => {
 });
 
 console.log('');
+console.log('--- an edit that would be wrong is not made ---');
+
+// One scratch CMakeLists per case, planned against it, and the plan applied so
+// what the user would end up with is what gets asserted -- not just the shape
+// of the plan object.
+const editDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'clx-edit-'));
+let editCase = 0;
+
+function planFor(body, scope) {
+  const dir = path.join(editDir, 'c' + (editCase++));
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, 'CMakeLists.txt'), body);
+  const plan = cmakeEdit.planLinkEdit(
+    { sourceDir: dir, targets: new Map() }, { name: 'app', sourceDir: '' }, 'newlib', scope);
+  plan.result = plan.offset === undefined ? null : (() => {
+    const text = fs.readFileSync(path.join(dir, 'CMakeLists.txt'), 'utf8');
+    return text.slice(0, plan.offset) + plan.insert + text.slice(plan.offset);
+  })();
+  return plan;
+}
+
+check('a call inside if() is not extended', () => {
+  // It would link the library only on the platform the guard names, and the
+  // preview showed nothing of it. Found by reading; reproduced before fixing.
+  const plan = planFor(
+    'add_executable(app app.cpp)\n\n' +
+    'if(WIN32)\n    target_link_libraries(app PRIVATE ws2_32)\nendif()\n\n' +
+    'target_link_libraries(app PUBLIC core)\n', 'PRIVATE');
+  assert.strictEqual(plan.kind, 'create');
+  assert.ok(/if\(WIN32\)\s*\n\s*target_link_libraries\(app PRIVATE ws2_32\)/.test(plan.result),
+    'the guarded call was modified:\n' + plan.result);
+  assert.ok(plan.insteadOfAppending && /if\(\)/.test(plan.insteadOfAppending),
+    'no reason given: ' + plan.insteadOfAppending);
+});
+
+check('a call ending in a different scope is not extended', () => {
+  // Appending after INTERFACE gives the target something it does not link, so
+  // the suggested fix would not have fixed anything.
+  const plan = planFor(
+    'add_executable(app app.cpp)\n' +
+    'target_link_libraries(app PUBLIC core INTERFACE headers_only)\n', 'PRIVATE');
+  assert.strictEqual(plan.kind, 'create');
+  assert.ok(/target_link_libraries\(app PRIVATE newlib\)/.test(plan.result), plan.result);
+  assert.ok(/INTERFACE headers_only\)/.test(plan.result), 'the existing call was edited');
+});
+
+check('a call ending in the wanted scope is extended', () => {
+  const plan = planFor(
+    'add_executable(app app.cpp)\n' +
+    'target_link_libraries(app PUBLIC core PRIVATE thing)\n', 'PRIVATE');
+  assert.strictEqual(plan.kind, 'append');
+  assert.ok(/PRIVATE thing newlib\)/.test(plan.result), plan.result);
+});
+
+check('the preview names the section the library lands in', () => {
+  const plan = planFor(
+    'add_executable(app app.cpp)\ntarget_link_libraries(app PRIVATE core)\n', 'PRIVATE');
+  assert.ok(/PRIVATE/.test(plan.preview), plan.preview);
+});
+
+check('the plain signature is never mixed with a keyword one', () => {
+  // CMake refuses outright, so a second call cannot be the answer here.
+  const plan = planFor(
+    'add_executable(app app.cpp)\n\n' +
+    'if(WIN32)\n    target_link_libraries(app ws2_32)\nendif()\n', 'PRIVATE');
+  assert.strictEqual(plan.kind, 'manual');
+  assert.ok(/plain signature/.test(plan.reason), plan.reason);
+});
+
+check('a target declared inside if() gets no generated call', () => {
+  const plan = planFor('if(BUILD_APP)\n    add_executable(app app.cpp)\nendif()\n', 'PRIVATE');
+  assert.strictEqual(plan.kind, 'manual');
+  assert.ok(/if\(\)/.test(plan.reason), plan.reason);
+});
+
+check('a lone quote in a comment does not blind the parser', () => {
+  // quoteIndex counted quotes inside comments, so one unbalanced one made every
+  // position after it read as "inside a string" and no command could be found.
+  const plan = planFor(
+    '# a 24" monitor is assumed here\n' +
+    'add_executable(app app.cpp)\ntarget_link_libraries(app PRIVATE core)\n', 'PRIVATE');
+  assert.strictEqual(plan.kind, 'append');
+  assert.ok(/PRIVATE core newlib\)/.test(plan.result), plan.result);
+});
+
+check('the file comes from where CMake says the target was declared', () => {
+  // Not from sourceDir/CMakeLists.txt, which is a different file whenever the
+  // target is created inside an include()d .cmake.
+  const dir = path.join(editDir, 'declared');
+  fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'sub', 'targets.cmake'),
+    'add_executable(app app.cpp)\ntarget_link_libraries(app PRIVATE core)\n');
+  const plan = cmakeEdit.planLinkEdit(
+    { sourceDir: dir, targets: new Map() },
+    { name: 'app', sourceDir: 'sub', declaration: { file: 'sub/targets.cmake', line: 1 } },
+    'newlib', 'PRIVATE');
+  assert.ok(plan.file.endsWith('targets.cmake'), plan.file);
+  assert.strictEqual(plan.kind, 'append');
+});
+
+fs.rmSync(editDir, { recursive: true, force: true });
+
+console.log('');
 console.log(failures === 0 ? 'all checks passed' : failures + ' check(s) failed');
 process.exit(failures === 0 ? 0 : 1);

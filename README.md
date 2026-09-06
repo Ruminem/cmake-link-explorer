@@ -135,6 +135,15 @@ An existing `target_link_libraries` call is extended; if there is none, a new on
 goes in right after the target is declared. Other targets in the same file are
 left alone.
 
+**An existing call is only extended when extending it is right.** A library
+appended to a call that sits inside `if(WIN32)` is linked on Windows and nowhere
+else, and one appended after an `INTERFACE` keyword is not linked by the target
+at all — both look like the fix worked. So when the call is inside a block, or
+its last section is a different keyword than the one you need, a separate call
+is written instead and the notification says why. If the existing call uses the
+plain signature — no keyword — CMake refuses to mix the two forms, and you are
+asked to add the line by hand rather than shown an edit that would not configure.
+
 **The keyword follows from where you included it.**
 
 | Where the include is | Keyword | Why |
@@ -710,12 +719,12 @@ tests run with no toolchain installed. Regenerate them with
 
 | Against | |
 |---|---|
-| synthetic File API fixture + backtraces + cycles/unused + tree comparison + staleness | 57 checks |
+| synthetic File API fixture + backtraces + cycles/unused + tree comparison + staleness | 61 checks |
 | `test/sample-project` (real CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 targets) | 8 checks |
-| target tree rendering | 16 checks |
+| target tree rendering | 18 checks |
 | map parser + map tree + target join + demangler | 64 checks |
-| include → link resolution + CMakeLists editing + compile settings | 40 checks |
+| include → link resolution + CMakeLists editing + compile settings | 48 checks |
 | VS Code extension host (1.136, macOS + Windows) | 40 checks |
 
 # Performance

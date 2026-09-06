@@ -207,6 +207,22 @@ check('getParent walks back to the root node', () => {
   assert.strictEqual(provider.getParent(node), undefined);
 });
 
+check('visibleCount agrees with visibleTargets', () => {
+  // It exists to skip the sort, which the status bar was paying for on every
+  // refresh just to read a length. Skipping it must not change the number.
+  for (const showUtility of [false, true]) {
+    vscodeStub.__setConfig('showUtilityTargets', showUtility);
+    assert.strictEqual(provider.visibleCount(), provider.visibleTargets().length,
+      'showUtility=' + showUtility);
+  }
+  vscodeStub.__setConfig('showUtilityTargets', false);
+});
+
+check('visibleCount is zero without a model', () => {
+  const empty = new TargetTreeProvider();
+  assert.strictEqual(empty.visibleCount(), 0);
+});
+
 console.log('');
 console.log(failures === 0 ? 'all checks passed' : failures + ' check(s) failed');
 process.exit(failures === 0 ? 0 : 1);

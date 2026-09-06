@@ -683,6 +683,30 @@ check('fingerprints skip a file that cannot be read', () => {
   assert.strictEqual(hashes.size, 0);
 });
 
+check('a fingerprint is not recomputed while the file looks the same', () => {
+  // The check runs on a timer while the user types, and after anything that
+  // touches every CMakeLists it was re-reading the whole set each time.
+  const model = staleModel(T0, [['CMakeLists.txt', T0 + 30000]]);
+  const file = model.cmakeInputs[0];
+  const first = fileApi.inputFingerprints(model).get(file.toLowerCase());
+
+  // Rewritten byte for byte with the timestamp put back: same size, same
+  // mtime, so the cached hash stands.
+  const bytes = fs.readFileSync(file);
+  const was = fs.statSync(file);
+  fs.writeFileSync(file, bytes);
+  fs.utimesSync(file, was.atime, was.mtime);
+  assert.strictEqual(fileApi.inputFingerprints(model).get(file.toLowerCase()), first);
+});
+
+check('a fingerprint follows a real change', () => {
+  const model = staleModel(T0, [['CMakeLists.txt', T0 + 30000]]);
+  const file = model.cmakeInputs[0];
+  const first = fileApi.inputFingerprints(model).get(file.toLowerCase());
+  fs.writeFileSync(file, 'add_library(x x.cpp y.cpp z.cpp)');
+  assert.notStrictEqual(fileApi.inputFingerprints(model).get(file.toLowerCase()), first);
+});
+
 check('a reply with no backtraceGraph records no inputs and never goes stale', () => {
   // Nothing to compare is not the same as "up to date", but claiming staleness
   // with no evidence would nag on every command. Staying quiet matches how the

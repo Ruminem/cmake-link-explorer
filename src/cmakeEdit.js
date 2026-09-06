@@ -15,9 +15,25 @@ const path = require('path');
  */
 function quoteIndex(text) {
   const positions = [];
+  let inside = false;
   for (let i = 0; i < text.length; i++) {
-    if (text[i] === '\\') { i++; continue; }
-    if (text[i] === '"') positions.push(i);
+    const c = text[i];
+    if (inside) {
+      if (c === '\\') { i++; continue; }
+      if (c === '"') { positions.push(i); inside = false; }
+      continue;
+    }
+    // Outside a string a '#' comments out the rest of the line, quotes and all.
+    // Counting one of those flipped the parity for everything after it, so a
+    // lone quote in a comment -- `# a 24" monitor` -- made the rest of the file
+    // look like one long string and no command in it could be found.
+    if (c === '#') {
+      const newline = text.indexOf('\n', i);
+      if (newline === -1) break;
+      i = newline;
+      continue;
+    }
+    if (c === '"') { positions.push(i); inside = true; }
   }
   const quotes = Int32Array.from(positions);
 
@@ -107,6 +123,54 @@ function inCommentOrString(text, index, quotes) {
   return false;
 }
 
+// Commands that open a block. A target_link_libraries() inside one only runs
+// some of the time, so appending to it links the library only some of the time
+// -- on one platform, in one configuration -- and the preview shows none of
+// that. Reproduced against an `if(WIN32)` guard that came before the real call.
+const BLOCK_OPENERS = ['if', 'foreach', 'while', 'function', 'macro', 'block'];
+const BLOCK_CLOSERS = BLOCK_OPENERS.map((name) => 'end' + name);
+
+// `else` and `elseif` are left out on purpose: they do not change the depth.
+// The leading (^|[\\s)]) is what keeps `endif(` from reading as an `if(`.
+function blockDepthAt(text, offset, quotes) {
+  const pattern = new RegExp(
+    '(^|[\\s)])(' + BLOCK_OPENERS.concat(BLOCK_CLOSERS).join('|') + ')\\s*\\(', 'gi');
+  let depth = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const nameStart = match.index + match[1].length;
+    if (nameStart >= offset) break;
+    if (inCommentOrString(text, nameStart, quotes)) continue;
+    if (match[2].toLowerCase().indexOf('end') === 0) depth = Math.max(0, depth - 1);
+    else depth++;
+  }
+  return depth;
+}
+
+const LINK_SCOPES = ['PUBLIC', 'PRIVATE', 'INTERFACE'];
+
+// The scope keywords a call is written with, in order. A library appended after
+// the last one joins that section, so adding to a call ending in INTERFACE
+// gives the target something it does not itself link -- which is the exact
+// problem the suggestion was raised to fix. An empty list means the plain
+// signature, which takes no keyword at all.
+function scopeSections(args) {
+  return args.replace(/#[^\n]*/g, ' ')
+    .split(/\s+/)
+    .map((word) => word.toUpperCase())
+    .filter((word) => LINK_SCOPES.indexOf(word) !== -1);
+}
+
+// Where CMake says the target was declared, which is not always the
+// CMakeLists.txt of its source directory -- a target created inside an
+// include()d .cmake is declared somewhere else entirely.
+function cmakeListsFor(model, target) {
+  if (target.declaration && target.declaration.file) {
+    return path.join(model.sourceDir, target.declaration.file);
+  }
+  return path.join(model.sourceDir, target.sourceDir || '', 'CMakeLists.txt');
+}
+
 function offsetToPosition(text, offset) {
   const before = text.slice(0, offset);
   const line = (before.match(/\n/g) || []).length;
@@ -123,8 +187,8 @@ function offsetToPosition(text, offset) {
  * } | {file: string|null, kind: 'manual', reason: string}}
  */
 function planLinkEdit(model, target, library, keyword) {
-  const scope = keyword || 'PRIVATE';
-  const file = path.join(model.sourceDir, target.sourceDir || '', 'CMakeLists.txt');
+  const scope = (keyword || 'PRIVATE').toUpperCase();
+  const file = cmakeListsFor(model, target);
 
   let text;
   try {
@@ -136,9 +200,28 @@ function planLinkEdit(model, target, library, keyword) {
   // CMakeLists.txt on Windows is usually CRLF. Writing a bare \n into it leaves
   // one mixed line that every diff and line-ending lint then picks up.
   const eol = text.indexOf('\r\n') === -1 ? '\n' : '\r\n';
+  const quotes = quoteIndex(text);
 
   const existing = findCommand(text, ['target_link_libraries'], target.name);
+  const sections = existing ? scopeSections(existing.args) : [];
+  const lastSection = sections.length ? sections[sections.length - 1] : null;
+
+  // Why the existing call cannot simply be extended. Kept as a sentence so it
+  // can be handed to the user rather than silently changing what gets written.
+  let cannotAppend = null;
   if (existing) {
+    if (blockDepthAt(text, existing.start, quotes) > 0) {
+      cannotAppend = 'the target_link_libraries(' + target.name + ') already in ' +
+        path.basename(file) + ' sits inside an if()/foreach() block, so adding ' +
+        library + ' to it would link it only when that block runs';
+    } else if (lastSection && lastSection !== scope) {
+      cannotAppend = 'the target_link_libraries(' + target.name + ') already in ' +
+        path.basename(file) + ' ends in an ' + lastSection + ' section, and ' +
+        library + ' has to be ' + scope;
+    }
+  }
+
+  if (existing && !cannotAppend) {
     // Match the indentation the call already uses so the edit is invisible in a
     // diff apart from the new line.
     const lines = text.slice(existing.open + 1, existing.close).split('\n');
@@ -154,7 +237,23 @@ function planLinkEdit(model, target, library, keyword) {
       offset,
       insert,
       position: offsetToPosition(text, offset),
-      preview: 'target_link_libraries(' + target.name + ' ... ' + library + ')'
+      // Naming the section it lands in, because that is the part that decides
+      // whether the target actually links the library.
+      preview: 'target_link_libraries(' + target.name + ' ... ' +
+               (lastSection ? lastSection + ' ... ' : '') + library + ')'
+    };
+  }
+
+  // A second call is valid CMake and unambiguous, which is why declining to
+  // append is not the end of the road -- but only when a keyword call is legal
+  // here at all. Mixing the plain and keyword signatures on one target is an
+  // error CMake refuses outright, so that case is handed back.
+  if (existing && !sections.length) {
+    return {
+      file,
+      kind: 'manual',
+      reason: cannotAppend + ', and the call uses the plain signature, which ' +
+              'cannot be mixed with a ' + scope + ' one. Add it by hand.'
     };
   }
 
@@ -165,6 +264,15 @@ function planLinkEdit(model, target, library, keyword) {
       kind: 'manual',
       reason: target.name + ' is not declared in ' + path.basename(file) +
               '; add target_link_libraries(' + target.name + ' ' + scope + ' ' + library + ') by hand.'
+    };
+  }
+  if (blockDepthAt(text, declaration.start, quotes) > 0) {
+    return {
+      file,
+      kind: 'manual',
+      reason: target.name + ' is declared inside an if()/foreach() block in ' +
+              path.basename(file) + ', so there is no unconditional place to put ' +
+              'target_link_libraries(' + target.name + ' ' + scope + ' ' + library + '). Add it by hand.'
     };
   }
 
@@ -179,7 +287,10 @@ function planLinkEdit(model, target, library, keyword) {
     offset,
     insert: (needsBlankLine ? eol : '') + statement,
     position: offsetToPosition(text, offset),
-    preview: statement.trim()
+    preview: statement.trim(),
+    // Set when a call was there but could not be extended, so the caller can
+    // say why a second one is appearing instead.
+    insteadOfAppending: cannotAppend || undefined
   };
 }
 
