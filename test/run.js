@@ -624,6 +624,43 @@ check('an input touched between the codemodel and the index is not stale', () =>
   assert.deepStrictEqual(fileApi.staleInputs(model), []);
 });
 
+check('re-saving a file without changing it is not an edit', () => {
+  // Ctrl+S on a buffer nobody touched rewrites the same bytes and moves the
+  // mtime. Warning about that turns the check into a nag; it is what happened
+  // the first time this was tried on spdlog, right after a configure.
+  const model = staleModel(T0, [['CMakeLists.txt', T0 + 30000]]);
+  const before = fileApi.inputFingerprints({ cmakeInputs: model.cmakeInputs });
+  assert.deepStrictEqual(fileApi.staleInputs(model, before), []);
+});
+
+check('a real edit is still reported when a baseline exists', () => {
+  const model = staleModel(T0, [['CMakeLists.txt', T0 + 30000]]);
+  const before = fileApi.inputFingerprints({ cmakeInputs: model.cmakeInputs });
+  fs.writeFileSync(model.cmakeInputs[0], 'add_library(x x.cpp y.cpp)');
+  fs.utimesSync(model.cmakeInputs[0], (T0 + 30000) / 1000, (T0 + 30000) / 1000);
+  assert.deepStrictEqual(
+    fileApi.staleInputs(model, before).map((f) => path.basename(f)), ['CMakeLists.txt']);
+});
+
+check('a file the baseline never saw is reported', () => {
+  // No record is no evidence of sameness. A CMakeLists that appeared after the
+  // baseline was taken has to count as an edit.
+  const model = staleModel(T0, [['late/CMakeLists.txt', T0 + 30000]]);
+  assert.deepStrictEqual(
+    fileApi.staleInputs(model, new Map()).map((f) => path.basename(f)), ['CMakeLists.txt']);
+});
+
+check('with no baseline the check is timestamps alone', () => {
+  const model = staleModel(T0, [['CMakeLists.txt', T0 + 30000]]);
+  assert.strictEqual(fileApi.staleInputs(model, null).length, 1);
+  assert.strictEqual(fileApi.staleInputs(model).length, 1);
+});
+
+check('fingerprints skip a file that cannot be read', () => {
+  const hashes = fileApi.inputFingerprints({ cmakeInputs: [path.join(staleDir, 'nope.txt')] });
+  assert.strictEqual(hashes.size, 0);
+});
+
 check('a reply with no backtraceGraph records no inputs and never goes stale', () => {
   // Nothing to compare is not the same as "up to date", but claiming staleness
   // with no evidence would nag on every command. Staying quiet matches how the

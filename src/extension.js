@@ -142,6 +142,7 @@ async function reload() {
   try {
     const model = fileApi.loadModel(buildDir, config().get('configuration', ''));
     resolveCache = new Map();
+    noteInputBaseline(model);
     provider.setModel(model);
     applySizesToTargets();
     watchReply(buildDir);
@@ -197,7 +198,7 @@ function updateStatus() {
     return;
   }
   const count = provider.visibleTargets().length;
-  const stale = fileApi.staleInputs(provider.model);
+  const stale = fileApi.staleInputs(provider.model, baselineForModel());
   statusItem.text = (stale.length ? '$(warning) ' : '$(circuit-board) ') + count + ' targets';
   statusItem.tooltip =
     'CMake Link Explorer\n' +
@@ -220,9 +221,31 @@ function updateStatus() {
 // target_link_libraries() line that has already been deleted -- and that answer
 // looks exactly like a correct one. Nothing downstream can tell the difference,
 // so the question gets asked before the answer is given rather than after.
+// The contents of the CMakeLists CMake read, recorded while the reply and the
+// files still lined up -- which is the only moment they are known to. It is
+// tied to the reply it was taken against: a new configure invalidates it, and
+// until a fresh one is taken the check falls back to timestamps alone.
+let inputBaseline = null;
+
+function noteInputBaseline(model) {
+  if (inputBaseline && inputBaseline.generatedAt === model.generatedAt) return;
+  // Taken only when nothing is already newer than the reply. Hashing files that
+  // have been edited since would bake the edit in as if CMake had seen it.
+  inputBaseline = fileApi.staleInputs(model, null).length
+    ? null
+    : { generatedAt: model.generatedAt, hashes: fileApi.inputFingerprints(model) };
+}
+
+function baselineForModel() {
+  const model = provider.model;
+  return inputBaseline && model && inputBaseline.generatedAt === model.generatedAt
+    ? inputBaseline.hashes
+    : null;
+}
+
 async function staleEnoughToStop(subject) {
   if (!provider.model) return false;
-  const stale = fileApi.staleInputs(provider.model);
+  const stale = fileApi.staleInputs(provider.model, baselineForModel());
   if (!stale.length) return false;
 
   const shown = stale.slice(0, 3).map((f) => path.basename(f));

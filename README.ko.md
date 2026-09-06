@@ -294,6 +294,10 @@ Include?* 는 여전히 "이미 링크돼 있음"이라고 답함. 마지막 con
 
 상태 표시줄도 같은 경고를 달고, 툴팁이 고쳐진 파일 이름을 보여줌.
 
+시각만 보면 아무것도 안 바꾸고 `Ctrl+S`만 눌러도 걸림. 그래서 응답과 파일이
+일치할 때 내용을 기록해 두고, 더 최신인 파일은 그 기록과 **내용까지 달라야**
+고친 것으로 침.
+
 ### 전이 축약 (transitive reduction)
 
 File API의 `dependencies`는 **빌드 순서 기준 전이적 폐포**다. 실행 파일 하나가
@@ -665,7 +669,7 @@ currently only supported if no other instance of Code is running` 로 거부당�
 
 | 대상 | |
 |---|---|
-| 합성 File API 픽스처 + backtrace + 순환/미사용 + 트리 비교 + 스냅샷 신선도 | 50 checks |
+| 합성 File API 픽스처 + backtrace + 순환/미사용 + 트리 비교 + 스냅샷 신선도 | 57 checks |
 | `test/sample-project` (실제 CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 16 checks |

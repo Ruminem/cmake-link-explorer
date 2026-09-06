@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const CLIENT_NAME = 'cmake-link-explorer';
 
@@ -374,14 +375,41 @@ function absoluteInputs(files, sourceDir, buildDir) {
 // Only edits made after the reply count. Clock skew is not compensated for: a
 // checkout with future timestamps reads as stale, which errs towards telling
 // the user to reconfigure rather than towards a confidently wrong answer.
-function staleInputs(model) {
+function staleInputs(model, fingerprints) {
   if (!model || !model.generatedAt) return [];
   return (model.cmakeInputs || []).filter((file) => {
     const mtime = mtimeOf(file);
     // 0 means it could not be read at all -- deleted, or somewhere we cannot
     // see. Neither is evidence of an edit, so it is not reported as one.
-    return mtime !== 0 && mtime > model.generatedAt;
+    if (mtime === 0 || mtime <= model.generatedAt) return false;
+    if (!fingerprints) return true;
+    const before = fingerprints.get(file.toLowerCase());
+    // Nothing recorded for this file is no basis for calling it unchanged.
+    return !before || before !== fingerprintOf(file);
   });
+}
+
+// Ctrl+S on a buffer nobody edited writes the same bytes back and moves the
+// mtime, which on its own reads exactly like an edit -- and warning about it
+// turns a useful check into a nag. Comparing content tells the two apart, but
+// only against what CMake actually read, and the one moment that is known is
+// while the reply and the files still agree. The caller records it then and
+// hands it back here.
+function inputFingerprints(model) {
+  const out = new Map();
+  for (const file of (model && model.cmakeInputs) || []) {
+    const hash = fingerprintOf(file);
+    if (hash) out.set(file.toLowerCase(), hash);
+  }
+  return out;
+}
+
+function fingerprintOf(file) {
+  try {
+    return crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+  } catch (e) {
+    return null;
+  }
 }
 
 function loadModel(buildDir, wantedConfiguration) {
@@ -815,6 +843,7 @@ module.exports = {
   findCodemodelFile,
   loadModel,
   staleInputs,
+  inputFingerprints,
   backtraceChain,
   findCycles,
   findUnusedTargets,

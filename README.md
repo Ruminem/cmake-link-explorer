@@ -306,6 +306,10 @@ built from, and says so before answering:
 
 The status bar carries the same warning, and the tooltip names the edited files.
 
+A timestamp alone would fire on `Ctrl+S` over a buffer nobody changed, so when
+the reply and the files agree the contents are recorded, and a file that is
+newer has to differ from that record to count as an edit.
+
 ### Transitive reduction
 
 The File API's `dependencies` is the **transitive closure in build order**. It
@@ -697,7 +701,7 @@ tests run with no toolchain installed. Regenerate them with
 
 | Against | |
 |---|---|
-| synthetic File API fixture + backtraces + cycles/unused + tree comparison + staleness | 50 checks |
+| synthetic File API fixture + backtraces + cycles/unused + tree comparison + staleness | 57 checks |
 | `test/sample-project` (real CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 targets) | 8 checks |
 | target tree rendering | 16 checks |
