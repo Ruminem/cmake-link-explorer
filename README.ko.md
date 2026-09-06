@@ -40,7 +40,14 @@ flowchart LR
 
 빌드도 의존성도 없음. 순수 JavaScript임.
 
-## VSIX로 설치 (권장)
+## Windows, 더블클릭
+
+[Releases](https://github.com/Ruminem/cmake-link-explorer/releases)에서
+`cmake-link-explorer-0.1.0-windows.zip`을 받아 풀고 `install.cmd`를 실행함.
+VS Code를 직접 찾아 설치하므로 **`code`가 PATH에 없어도 됨** — 방금 VS Code를 깔았다면
+터미널이 아직 옛 PATH를 들고 있어서 `code`가 없는 경우가 흔함.
+
+## VSIX로 설치
 
 [Releases](https://github.com/Ruminem/cmake-link-explorer/releases)에서 `.vsix`를 받아
 확장 탭의 `...` → **VSIX에서 설치**를 누르거나, 명령줄로:

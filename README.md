@@ -41,7 +41,15 @@ many bytes. Joining the two is what this extension does.
 
 Nothing to build, no dependencies. It is plain JavaScript.
 
-## From a VSIX (recommended)
+## Windows, double-click
+
+Grab `cmake-link-explorer-0.1.0-windows.zip` from
+[Releases](https://github.com/Ruminem/cmake-link-explorer/releases), unzip it and
+run `install.cmd`. It locates VS Code itself, so **`code` does not have to be on
+PATH** — right after installing VS Code the terminal is usually still holding the
+PATH it started with, and `code` is not there yet.
+
+## From a VSIX
 
 Grab the `.vsix` from
 [Releases](https://github.com/Ruminem/cmake-link-explorer/releases) and use
