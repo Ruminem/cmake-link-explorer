@@ -322,6 +322,29 @@ function mtimeOf(file) {
   }
 }
 
+// When CMake last wrote a reply here. Deliberately not the codemodel file's own
+// timestamp: CMake names reply files after a hash of their content and leaves an
+// unchanged one alone, so a codemodel can still carry the mtime of a configure
+// several runs back while the index -- whose name embeds a fresh timestamp every
+// time -- has been rewritten. Reading the codemodel's mtime marked a project
+// stale that had just been reconfigured, and kept marking it.
+//
+// The newest file in the directory is what says when CMake was last here.
+function replyWrittenAt(replyDir) {
+  let names;
+  try {
+    names = fs.readdirSync(replyDir);
+  } catch (e) {
+    return 0;
+  }
+  let newest = 0;
+  for (const name of names) {
+    const mtime = mtimeOf(path.join(replyDir, name));
+    if (mtime > newest) newest = mtime;
+  }
+  return newest;
+}
+
 // backtraceGraph paths are usually relative to the source root, occasionally
 // already absolute. Files under the build tree are dropped: CMake writes those
 // itself during the very configure that produced the reply, so their timestamps
@@ -491,7 +514,7 @@ function loadModel(buildDir, wantedConfiguration) {
     sourceDir: sourceDir,
     // When CMake wrote this reply, and what it read to write it. Together they
     // answer "is what I am showing still true of the CMakeLists on disk?".
-    generatedAt: mtimeOf(codemodelFile),
+    generatedAt: replyWrittenAt(replyDir),
     cmakeInputs: absoluteInputs(inputFiles, sourceDir, buildDir),
     configuration: configuration.name,
     configurations: configurations.map((c) => c.name),

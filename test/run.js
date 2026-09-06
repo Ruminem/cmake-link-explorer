@@ -600,6 +600,30 @@ check('inputs are absolute and the build tree is left out', () => {
   }
 });
 
+check('the configure time comes from the newest reply file, not the codemodel', () => {
+  // CMake names reply files after a hash of their content and leaves an
+  // unchanged one alone, so the codemodel keeps an old mtime across a configure
+  // that did not change it. Reading that timestamp reported a project as stale
+  // straight after it had been reconfigured, and went on reporting it. Only the
+  // index is rewritten every time. Seen on spdlog.
+  const replyDir = path.join(buildDir, '.cmake', 'api', 'v1', 'reply');
+  const names = fs.readdirSync(replyDir);
+  const newest = Math.max.apply(null, names.map(
+    (n) => fs.statSync(path.join(replyDir, n)).mtimeMs));
+  const model = fileApi.loadModel(buildDir, '');
+  assert.strictEqual(Math.round(model.generatedAt), Math.round(newest),
+    'generatedAt is not the newest file in ' + replyDir);
+});
+
+check('an input touched between the codemodel and the index is not stale', () => {
+  // The window between CMake writing the codemodel and finishing the reply can
+  // be tens of seconds on a large project. A save landing inside it is the case
+  // that produced the false alarm.
+  const codemodel = Date.now() - 60000;
+  const model = staleModel(codemodel + 30000, [['mid/CMakeLists.txt', codemodel + 20000]]);
+  assert.deepStrictEqual(fileApi.staleInputs(model), []);
+});
+
 check('a reply with no backtraceGraph records no inputs and never goes stale', () => {
   // Nothing to compare is not the same as "up to date", but claiming staleness
   // with no evidence would nag on every command. Staying quiet matches how the
