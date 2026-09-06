@@ -1,12 +1,11 @@
+<!-- Activity bar icon. Monochrome on purpose: VS Code recolours it per theme, so
+     it has to read as a silhouette. Same chain-link shape as the gallery icon in
+     media/icon-gallery.svg, which colours the two halves to say what links this
+     and what this links. -->
 <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-    <path d="M12 6.5v4M12 13.5v4M9.5 12H7.2M14.5 12h2.3M9.7 8.6 7.6 6.5M14.3 15.4l2.1 2.1"/>
-    <circle cx="12" cy="4.5" r="2"/>
-    <circle cx="12" cy="12" r="2"/>
-    <circle cx="12" cy="19.5" r="2"/>
-    <circle cx="5" cy="5" r="1.6"/>
-    <circle cx="19" cy="19" r="1.6"/>
-    <circle cx="5.2" cy="12" r="1.6"/>
-    <circle cx="18.8" cy="12" r="1.6"/>
+  <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+    <path d="M10.2 6.4 H8.4 a5.6 5.6 0 0 0 0 11.2 h1.8"/>
+    <path d="M13.8 6.4 h1.8 a5.6 5.6 0 0 1 0 11.2 h-1.8"/>
+    <path d="M8.6 12 H15.4"/>
   </g>
 </svg>

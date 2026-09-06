@@ -1,0 +1,12 @@
+<!-- Source for media/icon.png, the Marketplace / Extensions list icon.
+     A chain link split down the middle, taking its colours from the target tree:
+     charts.orange is what links this, charts.blue is what this links.
+     Regenerate the PNG at 128x128 after editing. -->
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="28" fill="#232733"/>
+  <g fill="none" stroke-width="12" stroke-linecap="round">
+    <path d="M56 40 H44 a24 24 0 0 0 0 48 h12" stroke="#D18616"/>
+    <path d="M72 40 h12 a24 24 0 0 1 0 48 H72" stroke="#3794FF"/>
+    <path d="M46 64 H82" stroke="#E8EAED" stroke-width="11"/>
+  </g>
+</svg>
