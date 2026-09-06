@@ -197,16 +197,45 @@ function updateStatus() {
     return;
   }
   const count = provider.visibleTargets().length;
-  statusItem.text = '$(circuit-board) ' + count + ' targets';
+  const stale = fileApi.staleInputs(provider.model);
+  statusItem.text = (stale.length ? '$(warning) ' : '$(circuit-board) ') + count + ' targets';
   statusItem.tooltip =
     'CMake Link Explorer\n' +
     provider.model.buildDir +
     '\nconfiguration: ' +
-    provider.model.configuration;
+    provider.model.configuration +
+    (stale.length
+      ? '\n\nEdited since CMake last configured:\n  ' +
+        stale.map((f) => path.basename(f)).join('\n  ') +
+        '\nWhat is shown is the previous configure.'
+      : '');
   statusItem.show();
 }
 
 // ---------------------------------------------------------------- commands
+
+// Everything here is read out of the File API reply, which CMake writes when it
+// configures. Editing a CMakeLists.txt does not touch it. So after an edit the
+// extension will happily answer "example already links spdlog" about a
+// target_link_libraries() line that has already been deleted -- and that answer
+// looks exactly like a correct one. Nothing downstream can tell the difference,
+// so the question gets asked before the answer is given rather than after.
+async function staleEnoughToStop(subject) {
+  if (!provider.model) return false;
+  const stale = fileApi.staleInputs(provider.model);
+  if (!stale.length) return false;
+
+  const shown = stale.slice(0, 3).map((f) => path.basename(f));
+  const names = shown.join(', ') +
+    (stale.length > shown.length ? ' and ' + (stale.length - shown.length) + ' more' : '');
+  const choice = await vscode.window.showWarningMessage(
+    names + ' changed since CMake last configured, so ' + subject +
+      ' describes the previous configure.',
+    'Run CMake configure', 'Show it anyway');
+  if (choice === 'Run CMake configure') runConfigure();
+  return choice !== 'Show it anyway';
+}
+
 
 async function selectBuildDir() {
   const picked = await vscode.window.showOpenDialog({
@@ -282,6 +311,7 @@ async function whyLinked() {
     vscode.window.showInformationMessage('No CMake targets loaded.');
     return;
   }
+  if (await staleEnoughToStop('the path between two targets')) return;
   const from = await pickTarget('Start from which target?');
   if (!from) return;
   const to = await pickTarget('Why does "' + from.name + '" end up pulling in...?');
@@ -448,6 +478,7 @@ async function compareTrees() {
     vscode.window.showInformationMessage('No CMake targets loaded.');
     return;
   }
+  if (await staleEnoughToStop('this comparison')) return;
 
   const other = await pickOtherBuildDir();
   if (!other) return;
@@ -549,6 +580,7 @@ async function projectHealth() {
     vscode.window.showInformationMessage('No CMake targets loaded.');
     return;
   }
+  if (await staleEnoughToStop('the cycle and unused report')) return;
   const model = provider.model;
   const name = (id) => (model.targets.get(id) || {}).name || id;
 
@@ -614,6 +646,7 @@ async function compileSettings() {
     vscode.window.showWarningMessage('No CMake targets loaded yet.');
     return;
   }
+  if (await staleEnoughToStop('these compile settings')) return;
 
   const file = editor.document.uri.fsPath;
   const found = includeResolver.compileSettingsForFile(provider.model, file);
@@ -697,6 +730,10 @@ async function pickIncludeFromDocument(document) {
 }
 
 async function reportInclude(filePath, includePath) {
+  // Guarded here rather than in linkForInclude so the context-menu route and
+  // the quick-pick route are both covered.
+  if (await staleEnoughToStop('the answer for this include')) return;
+
   const document = await vscode.workspace.openTextDocument(filePath);
   const result = resolveInclude(document, includePath);
   if (!result) return;

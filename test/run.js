@@ -8,6 +8,8 @@
 // The generic checks hold for any project. test/sample-project mirrors the
 // fixture, so the project-specific checks run for either of those two.
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const assert = require('assert');
 const fileApi = require('../src/fileApi');
@@ -522,6 +524,93 @@ check('two trees configured the same way report nothing', () => {
   assert.deepStrictEqual(diff.onlyRight, []);
   assert.deepStrictEqual(diff.changed, []);
 });
+
+console.log('');
+console.log('--- knowing the reply is out of date ---');
+
+// The reply is a snapshot taken at configure time. Deleting a
+// target_link_libraries() line does not change it, so without this check the
+// extension answers "already links spdlog" about a line that is gone -- and the
+// wrong answer is indistinguishable from a right one. Found on a real project.
+const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cle-stale-'));
+
+function staleModel(replyTime, files) {
+  const written = [];
+  for (const [name, mtime] of files) {
+    const file = path.join(staleDir, name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'add_library(x x.cpp)\n');
+    if (mtime !== null) fs.utimesSync(file, mtime / 1000, mtime / 1000);
+    written.push(file.replace(/\\/g, '/'));
+  }
+  return { generatedAt: replyTime, cmakeInputs: written };
+}
+
+const T0 = Date.now() - 60000;
+
+check('an input edited after the configure is reported', () => {
+  const model = staleModel(T0, [['CMakeLists.txt', T0 + 30000]]);
+  assert.deepStrictEqual(
+    fileApi.staleInputs(model).map((f) => path.basename(f)), ['CMakeLists.txt']);
+});
+
+check('an input older than the configure is not', () => {
+  const model = staleModel(T0, [['old/CMakeLists.txt', T0 - 30000]]);
+  assert.deepStrictEqual(fileApi.staleInputs(model), []);
+});
+
+check('only the edited one is named', () => {
+  const model = staleModel(T0, [
+    ['a/CMakeLists.txt', T0 - 30000],
+    ['b/CMakeLists.txt', T0 + 30000],
+    ['c/CMakeLists.txt', T0 - 30000]]);
+  assert.deepStrictEqual(
+    fileApi.staleInputs(model).map((f) => path.basename(path.dirname(f))), ['b']);
+});
+
+check('a deleted input is not treated as an edit', () => {
+  // It cannot be read, so there is nothing to compare. Reporting it would send
+  // the user to reconfigure over a file CMake may never have needed again.
+  const model = { generatedAt: T0, cmakeInputs: [path.join(staleDir, 'gone.txt')] };
+  assert.deepStrictEqual(fileApi.staleInputs(model), []);
+});
+
+check('a model from before this field existed reports nothing', () => {
+  assert.deepStrictEqual(fileApi.staleInputs({ targets: new Map() }), []);
+  assert.deepStrictEqual(fileApi.staleInputs(null), []);
+});
+
+check('the reply timestamp is read', () => {
+  assert.ok(fileApi.loadModel(buildDir, '').generatedAt > 0, 'no reply timestamp recorded');
+});
+
+check('inputs are absolute and the build tree is left out', () => {
+  // Everything under the build directory is written by the configure itself, so
+  // its timestamps are always newer and would mark every project permanently
+  // stale. Relative paths come out joined to the source root.
+  //
+  // The synthetic fixture writes no backtraceGraph, so it contributes no
+  // inputs -- which is the same shape an old CMake produces, and is checked
+  // just below. Run this file against a real build tree to exercise the rest.
+  const model = fileApi.loadModel(buildDir, '');
+  const build = model.buildDir.replace(/\\/g, '/').toLowerCase();
+  for (const file of model.cmakeInputs) {
+    assert.ok(path.isAbsolute(file), file + ' is not absolute');
+    assert.ok(!file.toLowerCase().startsWith(build + '/'), file + ' is inside the build tree');
+  }
+});
+
+check('a reply with no backtraceGraph records no inputs and never goes stale', () => {
+  // Nothing to compare is not the same as "up to date", but claiming staleness
+  // with no evidence would nag on every command. Staying quiet matches how the
+  // cycle check treats an old reply it cannot read link edges from.
+  const model = fileApi.loadModel(buildDir, '');
+  if (model.cmakeInputs.length) return;
+  assert.deepStrictEqual(fileApi.staleInputs(model), []);
+});
+
+
+fs.rmSync(staleDir, { recursive: true, force: true });
 
 console.log('');
 console.log(failures === 0 ? 'all checks passed' : failures + ' check(s) failed');

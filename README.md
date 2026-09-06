@@ -289,6 +289,23 @@ Drop a query file in the build directory and CMake writes **the fully resolved
 target graph as JSON** into `.cmake/api/v1/reply/` on the next configure. No need
 to interpret generator expressions or conditional links yourself.
 
+### The reply is a snapshot
+
+That reply is written **when CMake configures**, and nothing rewrites it when you
+edit a `CMakeLists.txt`. Delete a `target_link_libraries()` line and the answer
+to *Which Library Provides This Include?* is still "already links it" — correct
+about the last configure, wrong about the file in front of you, and it looks
+exactly like a right answer.
+
+So every command compares the reply against the `CMakeLists.txt` files it was
+built from, and says so before answering:
+
+> `example/CMakeLists.txt` changed since CMake last configured, so the answer for
+> this include describes the previous configure.
+> **[Run CMake configure] [Show it anyway]**
+
+The status bar carries the same warning, and the tooltip names the edited files.
+
 ### Transitive reduction
 
 The File API's `dependencies` is the **transitive closure in build order**. It
@@ -680,11 +697,11 @@ tests run with no toolchain installed. Regenerate them with
 
 | Against | |
 |---|---|
-| synthetic File API fixture + backtraces + cycles/unused + tree comparison | 41 checks |
+| synthetic File API fixture + backtraces + cycles/unused + tree comparison + staleness | 50 checks |
 | `test/sample-project` (real CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 targets) | 8 checks |
 | target tree rendering | 16 checks |
-| map parser + map tree + target join + demangler | 62 checks |
+| map parser + map tree + target join + demangler | 64 checks |
 | include → link resolution + CMakeLists editing + compile settings | 40 checks |
 | VS Code extension host (1.136, macOS + Windows) | 35 checks |
 

@@ -278,6 +278,22 @@ CMakeLists.txt를 파싱하지 않음. CMake의 **File API**(3.14+)를 씀.
 `.cmake/api/v1/reply/`에 **완전히 해석된 타겟 그래프를 JSON으로** 써줌.
 제너레이터 표현식이나 조건부 링크를 직접 해석할 필요가 없음.
 
+### 응답은 스냅샷임
+
+이 응답은 **CMake가 configure할 때** 쓰이고, `CMakeLists.txt`를 고쳐도 다시
+쓰이지 않음. `target_link_libraries()` 줄을 지워도 *Which Library Provides This
+Include?* 는 여전히 "이미 링크돼 있음"이라고 답함. 마지막 configure 기준으로는
+맞고 눈앞의 파일 기준으로는 틀린 답인데, **맞는 답과 생김새가 똑같음.**
+
+그래서 모든 명령이 응답을 그 응답을 만든 `CMakeLists.txt`들과 대조하고, 답하기
+전에 먼저 알려줌:
+
+> `example/CMakeLists.txt` changed since CMake last configured, so the answer for
+> this include describes the previous configure.
+> **[Run CMake configure] [Show it anyway]**
+
+상태 표시줄도 같은 경고를 달고, 툴팁이 고쳐진 파일 이름을 보여줌.
+
 ### 전이 축약 (transitive reduction)
 
 File API의 `dependencies`는 **빌드 순서 기준 전이적 폐포**다. 실행 파일 하나가
@@ -649,11 +665,11 @@ currently only supported if no other instance of Code is running` 로 거부당�
 
 | 대상 | |
 |---|---|
-| 합성 File API 픽스처 + backtrace + 순환/미사용 + 트리 비교 | 41 checks |
+| 합성 File API 픽스처 + backtrace + 순환/미사용 + 트리 비교 + 스냅샷 신선도 | 50 checks |
 | `test/sample-project` (실제 CMake 4.4) | 18 checks |
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 16 checks |
-| 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 62 checks |
+| 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 64 checks |
 | include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 40 checks |
 | VS Code 확장 호스트 (1.136, macOS + Windows) | 35 checks |
 

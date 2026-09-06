@@ -314,6 +314,53 @@ function dependencySites(target, graph) {
   return sites;
 }
 
+function mtimeOf(file) {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch (e) {
+    return 0;
+  }
+}
+
+// backtraceGraph paths are usually relative to the source root, occasionally
+// already absolute. Files under the build tree are dropped: CMake writes those
+// itself during the very configure that produced the reply, so their timestamps
+// say nothing about whether the user has edited anything since.
+function absoluteInputs(files, sourceDir, buildDir) {
+  const root = String(sourceDir || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const build = String(buildDir || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const out = [];
+  const seen = new Set();
+  for (const file of files) {
+    const text = String(file).replace(/\\/g, '/');
+    const absolute = path.isAbsolute(text) ? text : (root ? root + '/' + text : text);
+    if (build && absolute.toLowerCase().startsWith(build.toLowerCase() + '/')) continue;
+    const key = absolute.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(absolute);
+  }
+  return out;
+}
+
+// The CMakeLists the reply was built from that have been edited since. A
+// non-empty list means the graph on screen is a snapshot of a source tree that
+// no longer exists -- "already links spdlog" can be the answer for a
+// target_link_libraries() line the user has already deleted.
+//
+// Only edits made after the reply count. Clock skew is not compensated for: a
+// checkout with future timestamps reads as stale, which errs towards telling
+// the user to reconfigure rather than towards a confidently wrong answer.
+function staleInputs(model) {
+  if (!model || !model.generatedAt) return [];
+  return (model.cmakeInputs || []).filter((file) => {
+    const mtime = mtimeOf(file);
+    // 0 means it could not be read at all -- deleted, or somewhere we cannot
+    // see. Neither is evidence of an edit, so it is not reported as one.
+    return mtime !== 0 && mtime > model.generatedAt;
+  });
+}
+
 function loadModel(buildDir, wantedConfiguration) {
   const codemodelFile = findCodemodelFile(buildDir);
   if (!codemodelFile) {
@@ -336,12 +383,19 @@ function loadModel(buildDir, wantedConfiguration) {
   }
 
   const targets = new Map();
+  // Every CMakeLists.txt (and .cmake) that had a hand in defining a target. The
+  // reply is a snapshot of the last configure, so these are what has to be
+  // compared against it to know whether the snapshot still describes the source.
+  const inputFiles = new Set();
   for (const ref of configuration.targets || []) {
     let target;
     try {
       target = readJson(path.join(replyDir, ref.jsonFile));
     } catch (e) {
       continue; // A single unreadable target should not sink the whole view.
+    }
+    for (const f of (target.backtraceGraph && target.backtraceGraph.files) || []) {
+      if (f) inputFiles.add(String(f));
     }
     const chain = backtraceChain(target.backtraceGraph, target.backtrace);
     targets.set(target.id, {
@@ -430,9 +484,15 @@ function loadModel(buildDir, wantedConfiguration) {
     }
   }
 
+  const sourceDir = (codemodel.paths && codemodel.paths.source) || '';
+
   return {
     buildDir: buildDir,
-    sourceDir: (codemodel.paths && codemodel.paths.source) || '',
+    sourceDir: sourceDir,
+    // When CMake wrote this reply, and what it read to write it. Together they
+    // answer "is what I am showing still true of the CMakeLists on disk?".
+    generatedAt: mtimeOf(codemodelFile),
+    cmakeInputs: absoluteInputs(inputFiles, sourceDir, buildDir),
     configuration: configuration.name,
     configurations: configurations.map((c) => c.name),
     targets: targets,
@@ -731,6 +791,7 @@ module.exports = {
   hasReply,
   findCodemodelFile,
   loadModel,
+  staleInputs,
   backtraceChain,
   findCycles,
   findUnusedTargets,
