@@ -38,7 +38,7 @@ flowchart LR
 
 # 설치
 
-빌드도 의존성도 없음. 순수 JavaScript다.
+빌드도 의존성도 없음. 순수 JavaScript임.
 
 ## VSIX로 설치 (권장)
 
@@ -214,7 +214,7 @@ board.cpp
 ```
 TARGETS                            실행 파일이 먼저, 그다음 의존받는 순
 🚀 sample_app     →3
-📦 engine         →2 ←2            펼치지 않아도 허브라는 게 보인다
+📦 engine         →2 ←2            펼치지 않아도 허브라는 게 보임
 📦 math_utils        ←2            아무것도 링크 안 하는 말단
 📦 db_wrap           ←1
 
