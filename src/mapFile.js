@@ -524,9 +524,23 @@ function matchTargets(targetModel, mapModel) {
 
     if (object.archive) target = byArtifact.get(path.basename(object.archive));
     if (!target) target = byArtifact.get(path.basename(object.object));
+    // CMake compiles a target's objects under <target>.dir, which is the only
+    // handle an executable has: it produces no archive to match by name. Two
+    // things about where that marker turns up:
+    //
+    //   CMakeFiles/example.dir/example.cpp.o          the object itself
+    //   CMakeFiles\example.dir/objects.a(example.cpp.obj)   inside an archive
+    //
+    // The second is what a Makefiles generator writes on Windows, where the
+    // objects go through a thin archive and the linker spells that part of the
+    // path with backslashes. Looking only at the object, and only for forward
+    // slashes, meant no executable ever matched there.
     if (!target) {
-      const dir = /(?:^|\/)([^/]+)\.dir(?:\/|$)/.exec(object.object);
-      if (dir) target = byObjectDir.get(dir[1] + '.dir');
+      for (const candidate of [object.object, object.archive]) {
+        if (target || !candidate) continue;
+        const dir = /(?:^|[\\/])([^\\/]+)\.dir(?:[\\/]|$)/.exec(candidate);
+        if (dir) target = byObjectDir.get(dir[1] + '.dir');
+      }
     }
     // Only after every exact route has missed, and only for things that name a
     // library: object files keep their own names across platforms, so stemming

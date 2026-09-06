@@ -563,6 +563,23 @@ check('an ambiguous stem is left alone rather than guessed at', () => {
   assert.deepStrictEqual(joinNames(model([['a', 'democore.lib'], ['b', 'democore.dll']])), []);
 });
 
+check('an executable is matched through an archive of its objects', () => {
+  // Verbatim from a GNU ld map for a Makefiles build on Windows. The objects
+  // go through a thin archive, so <target>.dir lands in the archive path
+  // rather than the object, and that part is spelled with a backslash. Looking
+  // only at the object, and only for forward slashes, matched no executable.
+  const text = [
+    'Linker script and memory map', '',
+    '.text          0x0000000140001000     0x1f40',
+    ' .text         0x0000000140001000     0x1f40 CMakeFiles\\example.dir/objects.a(example.cpp.obj)',
+    ''
+  ].join('\n');
+  const joined = mapFile.matchTargets(
+    model([['example', 'example.exe', 'EXECUTABLE']]), mapFile.parse(text, 'synthetic'));
+  assert.strictEqual(joined.size, 1, 'the executable did not match its object archive');
+  assert.strictEqual([...joined.values()][0].size, 0x1f40);
+});
+
 check('object files are not stemmed into same-named targets', () => {
   // app.o sits in the map as a plain object. A target called app must not
   // absorb it by name alone - that is what the .dir rule is for.
