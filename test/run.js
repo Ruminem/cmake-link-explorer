@@ -219,6 +219,29 @@ if (usingFixture) {
 }
 
 if (isSampleProject) {
+  check('a site is kept for every edge a view can walk, and no others', () => {
+    const app = byName.get('sample_app');
+    if (!app.dependencySites.size) {
+      console.log('        (skipped: this reply carries no backtraces)');
+      return;
+    }
+    // Why Is This Linked? prints the line beside each hop, so every direct
+    // dependency has to have one.
+    for (const id of app.directDependencyIds) {
+      assert.ok(app.dependencySites.get(id), nameOf(id) + ' lost its site');
+    }
+    // The closure carries more than the reduction kept, and nothing can reach
+    // those in one hop. Holding a site for them is what made the map 20 times
+    // larger than anything reads.
+    const closureOnly = app.dependencyIds.filter((id) =>
+      app.directDependencyIds.indexOf(id) === -1 && app.linkTargetIds.indexOf(id) === -1);
+    assert.ok(closureOnly.length, 'the fixture should have transitive-only dependencies');
+    for (const id of closureOnly) {
+      assert.strictEqual(app.dependencySites.get(id), undefined,
+                         nameOf(id) + ' is transitive-only and should not be kept');
+    }
+  });
+
   check('compile groups survive a real codemodel', () => {
     const engine = byName.get('engine');
     // The synthetic fixture does not write compileGroups; a real reply does.

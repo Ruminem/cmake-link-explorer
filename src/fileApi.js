@@ -287,13 +287,28 @@ function compileGroupsOf(target) {
 
 function dependencySites(target, graph) {
   const sites = new Map();
+
+  // One target_link_libraries() call is the origin of every dependency it
+  // named, so the same backtrace index comes back over and over. `dependencies`
+  // is the closure, which on a large project means hundreds of entries per
+  // target and hundreds of thousands overall; walking the graph again for each
+  // one was most of what reading a big codemodel cost.
+  const chainAt = new Map();
+  const siteAt = (index) => {
+    if (chainAt.has(index)) return chainAt.get(index);
+    const chain = backtraceChain(graph, index);
+    const site = chain.length ? chain[chain.length - 1] : null;
+    chainAt.set(index, site);
+    return site;
+  };
+
   // linkLibraries first: it is the link line as written, so it carries the edge
   // that closes a cycle, which `dependencies` drops to keep a build order.
   for (const list of [target.linkLibraries, target.dependencies]) {
     for (const entry of list || []) {
       if (!entry || !entry.id || sites.has(entry.id)) continue;
-      const chain = backtraceChain(graph, entry.backtrace);
-      if (chain.length) sites.set(entry.id, chain[chain.length - 1]);
+      const site = siteAt(entry.backtrace);
+      if (site) sites.set(entry.id, site);
     }
   }
   return sites;
@@ -386,6 +401,24 @@ function loadModel(buildDir, wantedConfiguration) {
   }
 
   computeDirectDependencies(targets);
+
+  // A site is only ever read for an edge something can walk: a direct
+  // dependency, or a link the cycle report names. It has to be collected from
+  // the whole of `dependencies` first, because which edges survive the
+  // reduction is not known until it has run - but keeping the rest means
+  // holding a site for every pair in the closure. On a two thousand target
+  // project that was 209,199 entries where 10,563 are reachable.
+  for (const target of targets.values()) {
+    if (!target.dependencySites.size) continue;
+    const reachable = new Set(target.directDependencyIds);
+    for (const id of target.linkTargetIds) reachable.add(id);
+    const kept = new Map();
+    for (const id of reachable) {
+      const site = target.dependencySites.get(id);
+      if (site) kept.set(id, site);
+    }
+    target.dependencySites = kept;
+  }
 
   // Built from direct edges so "linked by" names the targets that actually
   // declare the dependency, not every executable downstream of it.
