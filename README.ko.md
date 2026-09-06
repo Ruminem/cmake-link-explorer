@@ -6,12 +6,12 @@ CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 
 
 | 기능 | 답하는 질문 | 언제 쓰나 |
 |---|---|---|
-| **Link for include** | 이 헤더 쓰려면 **뭘 링크해야 하나** | `#include` 쓰고 막혔을 때 |
-| **Targets** | 무엇이 무엇을 링크하나, 특히 **누가 이걸 링크하나** | 구조 파악, 영향 범위 |
-| **Linker Map** | **뭐가 용량을 먹나**, 지난 빌드 대비 뭐가 늘었나 | 바이너리가 커졌을 때 |
-| **Compiled With** | 이 파일의 **실효 매크로와 include 경로** | `#ifdef`가 안 잡힐 때 |
-| **Cycles / Unused** | **순환 링크와 아무도 안 쓰는 라이브러리** | 구조 정리할 때 |
-| **Compare Trees** | 두 빌드 트리가 **어디서 갈라지나** | 여기선 되는데 저기선 깨질 때 |
+| **[Link for include](#link-for-include)** | 이 헤더 쓰려면 **뭘 링크해야 하나** | `#include` 쓰고 막혔을 때 |
+| **[Targets](#targets)** | 무엇이 무엇을 링크하나, 특히 **누가 이걸 링크하나** | 구조 파악, 영향 범위 |
+| **[Linker Map](#linker-map)** | **뭐가 용량을 먹나**, 지난 빌드 대비 뭐가 늘었나 | 바이너리가 커졌을 때 |
+| **[Compiled With](#what-is-this-file-compiled-with)** | 이 파일의 **실효 매크로와 include 경로** | `#ifdef`가 안 잡힐 때 |
+| **[Cycles / Unused](#find-cycles-and-unused-targets)** | **순환 링크와 아무도 안 쓰는 라이브러리** | 구조 정리할 때 |
+| **[Compare Trees](#compare-with-another-build-tree)** | 두 빌드 트리가 **어디서 갈라지나** | 여기선 되는데 저기선 깨질 때 |
 
 ## 어디서 답을 가져오나
 

@@ -6,12 +6,12 @@ A VS Code extension for the moments a CMake project stops you over linking.
 
 | Feature | The question it answers | When you reach for it |
 |---|---|---|
-| **Link for include** | **what do I have to link** to use this header | you wrote an `#include` and got stuck |
-| **Targets** | what links what, and above all **who links this** | reading the structure, judging blast radius |
-| **Linker Map** | **what is eating the size**, and what grew since the last build | the binary got bigger |
-| **Compiled With** | the **effective macros and include paths** for this file | an `#ifdef` is not firing |
-| **Cycles / Unused** | **link cycles and libraries nobody uses** | tidying the structure |
-| **Compare Trees** | **where two build trees diverge** | it builds here and breaks there |
+| **[Link for include](#link-for-include)** | **what do I have to link** to use this header | you wrote an `#include` and got stuck |
+| **[Targets](#targets)** | what links what, and above all **who links this** | reading the structure, judging blast radius |
+| **[Linker Map](#linker-map)** | **what is eating the size**, and what grew since the last build | the binary got bigger |
+| **[Compiled With](#what-is-this-file-compiled-with)** | the **effective macros and include paths** for this file | an `#ifdef` is not firing |
+| **[Cycles / Unused](#find-cycles-and-unused-targets)** | **link cycles and libraries nobody uses** | tidying the structure |
+| **[Compare Trees](#compare-with-another-build-tree)** | **where two build trees diverge** | it builds here and breaks there |
 
 ## Where the answers come from
 
