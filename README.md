@@ -1,4 +1,4 @@
-**English** · [한국어](README.ko.md)
+**English** · [한국어](https://github.com/Ruminem/cmake-link-explorer/blob/main/README.ko.md)
 
 # CMake Link Explorer
 
@@ -797,3 +797,13 @@ Caught while measuring.
 - LLVM lld map format (when a real sample turns up)
 - MSVC `link.exe /MAP` format (likewise, when a real sample turns up)
 - graph view (webview with draggable nodes)
+
+---
+
+## Licence and trademarks
+
+MIT. See [LICENSE](https://github.com/Ruminem/cmake-link-explorer/blob/main/LICENSE).
+
+Not affiliated with, endorsed by, or sponsored by Kitware, Inc. **CMake** is a
+trademark of Kitware, Inc., used here only to say what this extension works
+with. Visual Studio Code is a product of Microsoft Corporation.

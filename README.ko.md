@@ -1,4 +1,4 @@
-[English](README.md) · **한국어**
+[English](https://github.com/Ruminem/cmake-link-explorer/blob/main/README.md) · **한국어**
 
 # CMake Link Explorer
 
@@ -753,3 +753,13 @@ CMakeLists.txt로 측정한 값임.
 - LLVM lld 맵 포맷 (실물 샘플이 생기면)
 - MSVC `link.exe /MAP` 포맷 (마찬가지로 실물 샘플이 생기면)
 - 그래프 뷰 (웹뷰 + 노드 드래그)
+
+---
+
+## 라이선스와 상표
+
+MIT. [LICENSE](https://github.com/Ruminem/cmake-link-explorer/blob/main/LICENSE) 참고.
+
+Kitware, Inc.와 제휴·후원 관계가 **없음.** **CMake**는 Kitware, Inc.의 상표이고,
+여기서는 이 익스텐션이 무엇을 다루는지 밝히려고 쓴 것뿐임. Visual Studio Code는
+Microsoft Corporation의 제품임.
