@@ -26,8 +26,12 @@ function isHeader(file) {
   return HEADER_EXTENSIONS.indexOf(path.extname(file).toLowerCase()) !== -1;
 }
 
+// Takes anything: a target's source list is whatever the codemodel held, and a
+// caller can reach here with a path the editor never filled in. Comparing an
+// absent path against nothing is the honest answer; throwing out of a lookup
+// is not.
 function normalise(p) {
-  return p.replace(/\\/g, '/');
+  return typeof p === 'string' ? p.replace(/\\/g, '/') : '';
 }
 
 // Windows and the default macOS volume are case-insensitive, and VS Code does
