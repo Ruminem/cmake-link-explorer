@@ -3,7 +3,7 @@
   "displayName": "CMake Link Explorer",
   "description": "Browse CMake target link structure in both directions: what a target links, and what links it.",
   "version": "0.1.0",
-  "publisher": "local",
+  "publisher": "Ruminem",
   "repository": {
     "type": "git",
     "url": "https://github.com/Ruminem/cmake-link-explorer.git"

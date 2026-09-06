@@ -87,7 +87,7 @@ code --list-extensions | grep cmake-link          # macOS / Linux
 code --list-extensions | Select-String cmake-link # Windows PowerShell
 ```
 
-`local.cmake-link-explorer` means it is installed. It sits there like a theme or
+`Ruminem.cmake-link-explorer` means it is installed. It sits there like a theme or
 an icon pack would, and **the cloned folder does not have to be open in VS Code.**
 
 From then on it wakes up when you open a CMake project or a C/C++ file. There is

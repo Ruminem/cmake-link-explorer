@@ -84,7 +84,7 @@ code --list-extensions | grep cmake-link          # macOS / Linux
 code --list-extensions | Select-String cmake-link # Windows PowerShell
 ```
 
-`local.cmake-link-explorer` 가 뜨면 설치된 것이다. 테마나 아이콘 확장을 깐 것과
+`Ruminem.cmake-link-explorer` 가 뜨면 설치된 것이다. 테마나 아이콘 확장을 깐 것과
 같은 상태이고, **클론한 폴더를 VS Code로 열어둘 필요는 없다.**
 
 그다음부터는 CMake 프로젝트를 열거나 C/C++ 파일을 여는 것만으로 켜진다.

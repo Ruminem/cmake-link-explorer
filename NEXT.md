@@ -11,7 +11,7 @@ backtrace 점프(`openCMakeLists jumps to the add_library line`),
 **윈도우 총 195개 통과** (단위 160 + 확장 호스트 35).
 
 **VSIX 패키징이 된다.** `npx @vscode/vsce package`로 14개 파일 59.1 KB가 나오고,
-`code --install-extension`으로 설치까지 확인했다(`local.cmake-link-explorer@0.1.0`).
+`code --install-extension`으로 설치까지 확인했다(`Ruminem.cmake-link-explorer@0.1.0`).
 `.vscodeignore`로 `CLAUDE.md`/`NEXT.md` 등을 걷어냈고 `repository`/`bugs`/`keywords`를
 채웠다.
 

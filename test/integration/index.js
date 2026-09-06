@@ -11,7 +11,7 @@ const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
 
-const EXTENSION_ID = 'local.cmake-link-explorer';
+const EXTENSION_ID = 'Ruminem.cmake-link-explorer';
 
 // The extension host does not forward console output to the launching shell, so
 // results also go to a file the caller can read back.
