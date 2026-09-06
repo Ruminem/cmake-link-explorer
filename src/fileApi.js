@@ -288,13 +288,62 @@ function backtraceChain(graph, index) {
 // writing this, so it is the effective set rather than what any one command in
 // the CMakeLists said. Targets with mixed languages get one group each, and the
 // sourceIndexes point back into the target's own source list.
+// -D reaches the compiler through more than target_compile_definitions().
+// Anything put in CMAKE_<LANG>_FLAGS or target_compile_options() arrives as a
+// plain command fragment instead, and CMake does not repeat it under `defines`.
+// Reading only `defines` left the list short without saying so, which for a
+// project that sets NDEBUG or _WIN32_WINNT in its flags means the macro that
+// actually decides the build is the one missing from the answer.
+function definesInFragment(fragment) {
+  const tokens = String(fragment || '').match(/"[^"]*"|\S+/g) || [];
+  const unquote = (t) => t.replace(/^"|"$/g, '');
+  const out = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = unquote(tokens[i]);
+    // MSVC spells it /D. Accepting that shape anywhere would turn a fragment
+    // like /Data/x into a define named "ata", so it has to look like a macro
+    // name and nothing like a path.
+    const isDefine = token.slice(0, 2) === '-D' ||
+      (token.slice(0, 2) === '/D' && /^\/D[A-Za-z_][A-Za-z0-9_]*(=|$)/.test(token));
+    if (!isDefine) continue;
+    // `-D FOO` puts the name in the next token.
+    const value = token.slice(2) || (i + 1 < tokens.length ? unquote(tokens[++i]) : '');
+    if (value) out.push(value);
+  }
+  return out;
+}
+
+// Definitions first, then whatever the flags add that is not already there.
+function mergedDefines(group) {
+  const all = [];
+  const fromFlags = [];
+  const seen = new Set();
+  const add = (value, viaFlags) => {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    all.push(value);
+    if (viaFlags) fromFlags.push(value);
+  };
+  for (const entry of group.defines || []) add(entry && entry.define, false);
+  for (const fragment of group.compileCommandFragments || []) {
+    for (const value of definesInFragment(fragment && fragment.fragment)) add(value, true);
+  }
+  return { all, fromFlags };
+}
+
 function compileGroupsOf(target) {
   const groups = [];
   for (const group of target.compileGroups || []) {
+    const defines = mergedDefines(group);
     groups.push({
       language: group.language || null,
       standard: group.languageStandard ? group.languageStandard.standard || null : null,
-      defines: (group.defines || []).map((d) => d.define).filter(Boolean),
+      // Merged rather than kept apart: the question is what the file is compiled
+      // with, and a macro set in the flags is set just as hard as one set by
+      // target_compile_definitions(). `fromFlags` records which is which so the
+      // report can say where each came from.
+      defines: defines.all,
+      definesFromFlags: defines.fromFlags,
       includes: (group.includes || []).filter((i) => typeof i.path === 'string').map((i) => ({
         // target_include_directories(x PUBLIC .) reaches the codemodel as
         // "<dir>/.", which is the same directory with a wart on the end.
@@ -889,6 +938,8 @@ module.exports = {
   hasReply,
   findCodemodelFile,
   loadModel,
+  // Exposed so the -D parsing can be tested without a configured tree.
+  __compileGroupsForTests: compileGroupsOf,
   staleInputs,
   inputFingerprints,
   backtraceChain,

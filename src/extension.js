@@ -787,8 +787,16 @@ async function compileSettings() {
   }
 
   output.appendLine('');
-  output.appendLine('  defines (' + group.defines.length + ')');
-  for (const define of group.defines) output.appendLine('    ' + define);
+  // Naming the source of the list, because the obvious reading of "defines" is
+  // "every macro in effect here" and that is not what CMake can tell us: a
+  // #define written in this file or pulled in through a header is invisible to
+  // the build system and will never appear below.
+  output.appendLine('  defines (' + group.defines.length + ')   set by the build; ' +
+                    '#define in the source is not part of this');
+  const fromFlags = new Set(group.definesFromFlags || []);
+  for (const define of group.defines) {
+    output.appendLine('    ' + define + (fromFlags.has(define) ? '   [from compile flags]' : ''));
+  }
   if (!group.defines.length) output.appendLine('    (none)');
 
   output.appendLine('');

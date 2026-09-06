@@ -407,6 +407,68 @@ check('nested parentheses do not confuse the matcher', () => {
 });
 
 console.log('');
+console.log('--- every -D the build sets, wherever it was written ---');
+
+// target_compile_definitions() lands in the codemodel's `defines`, but -D put
+// in CMAKE_<LANG>_FLAGS or target_compile_options() only ever appears as a
+// command fragment. Reading `defines` alone made the report quietly short --
+// noticed because a define set in the flags was simply absent from it.
+const fragments = (list) => ({ defines: [], compileCommandFragments: list.map((f) => ({ fragment: f })) });
+
+function definesOf(group) {
+  const target = { compileGroups: [group], sources: [], dependencies: [] };
+  return fileApi.__compileGroupsForTests
+    ? fileApi.__compileGroupsForTests(target)[0]
+    : null;
+}
+
+check('-D from compile flags is picked up', () => {
+  const group = definesOf(fragments(['-DFROM_FLAGS', '-DWITH_VALUE=2']));
+  assert.deepStrictEqual(group.defines, ['FROM_FLAGS', 'WITH_VALUE=2']);
+  assert.deepStrictEqual(group.definesFromFlags, ['FROM_FLAGS', 'WITH_VALUE=2']);
+});
+
+check('definitions come first and flags do not duplicate them', () => {
+  const group = definesOf({
+    defines: [{ define: 'SHARED' }, { define: 'ONLY_DEF' }],
+    compileCommandFragments: [{ fragment: '-DSHARED' }, { fragment: '-DONLY_FLAG' }]
+  });
+  assert.deepStrictEqual(group.defines, ['SHARED', 'ONLY_DEF', 'ONLY_FLAG']);
+  assert.deepStrictEqual(group.definesFromFlags, ['ONLY_FLAG']);
+});
+
+check('several defines in one fragment are all read', () => {
+  const group = definesOf(fragments(['-DA -DB=1']));
+  assert.deepStrictEqual(group.defines, ['A', 'B=1']);
+});
+
+check('a separated -D takes the next token', () => {
+  const group = definesOf(fragments(['-D NAME=1']));
+  assert.deepStrictEqual(group.defines, ['NAME=1']);
+});
+
+check('a quoted value keeps its spaces', () => {
+  const group = definesOf(fragments(['-D "GREETING=hello there"']));
+  assert.deepStrictEqual(group.defines, ['GREETING=hello there']);
+});
+
+check('MSVC /D is read', () => {
+  const group = definesOf(fragments(['/DWIN32_LEAN_AND_MEAN', '/DVALUE=3']));
+  assert.deepStrictEqual(group.defines, ['WIN32_LEAN_AND_MEAN', 'VALUE=3']);
+});
+
+check('a path that starts with /D is not mistaken for one', () => {
+  // /Data/include would otherwise become a define named "ata".
+  const group = definesOf(fragments(['/Data/include', '/D/not/a/macro', '-I/Dir']));
+  assert.deepStrictEqual(group.defines, []);
+});
+
+check('flags that are not defines are ignored', () => {
+  const group = definesOf(fragments(['-O2', '-Wall', '-std=c++17', '/W4', '-isystem', '/usr/include']));
+  assert.deepStrictEqual(group.defines, []);
+});
+
+console.log('');
 console.log('--- an edit that would be wrong is not made ---');
 
 // One scratch CMakeLists per case, planned against it, and the plan applied so

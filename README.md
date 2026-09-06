@@ -210,10 +210,11 @@ board.cpp
   target     board  [static]
   language   CXX (17)
 
-  defines (3)
+  defines (4)   set by the build; #define in the source is not part of this
     BOARD_REV=3
     STM32F407xx
     USE_HAL_DRIVER
+    NDEBUG   [from compile flags]
 
   include paths (2)
     /proj/board/inc
@@ -225,6 +226,17 @@ itself; `STM32F407xx` and `USE_HAL_DRIVER` arrived through `hal` marking them
 `PUBLIC`. CMake resolves generator expressions and `PUBLIC`/`INTERFACE`
 inheritance before writing the codemodel, so what shows up here is what the
 compiler actually receives.
+
+**Every `-D` counts, not just `target_compile_definitions`.** A macro put in
+`CMAKE_CXX_FLAGS` or `target_compile_options()` reaches the compiler exactly as
+hard, but CMake reports it as a plain command fragment rather than a define, so
+it is read out of there too and marked `[from compile flags]`. MSVC's `/D` is
+read as well.
+
+**A `#define` in the source is not in this list and cannot be.** CMake never
+reads the file's contents — it only knows the command line it hands the
+compiler. Macros written in the file, or picked up from a header, live a layer
+below anything the build system can see.
 
 **Headers are compiled by nobody, so they are in no compile group.** When the
 target has exactly one language group that is what including them means, so it is
@@ -724,7 +736,7 @@ tests run with no toolchain installed. Regenerate them with
 | googletest / abseil-cpp (121 targets) | 8 checks |
 | target tree rendering | 18 checks |
 | map parser + map tree + target join + demangler | 64 checks |
-| include → link resolution + CMakeLists editing + compile settings | 48 checks |
+| include → link resolution + CMakeLists editing + compile settings | 56 checks |
 | VS Code extension host (1.136, macOS + Windows) | 40 checks |
 
 # Performance

@@ -202,10 +202,11 @@ board.cpp
   target     board  [static]
   language   CXX (17)
 
-  defines (3)
+  defines (4)   set by the build; #define in the source is not part of this
     BOARD_REV=3
     STM32F407xx
     USE_HAL_DRIVER
+    NDEBUG   [from compile flags]
 
   include paths (2)
     /proj/board/inc
@@ -216,6 +217,15 @@ board.cpp
 직접 정의한 것이고, `STM32F407xx`와 `USE_HAL_DRIVER`는 `hal`이 `PUBLIC`으로 붙여
 전파된 것임. CMake가 제너레이터 표현식과 `PUBLIC`/`INTERFACE` 상속을 전부 해석한
 뒤에 코드모델을 쓰므로, 여기 나오는 게 컴파일러가 실제로 받는 값임.
+
+**`target_compile_definitions`만 세는 게 아님.** `CMAKE_CXX_FLAGS`나
+`target_compile_options()`에 넣은 매크로도 컴파일러에는 똑같이 도달하는데, CMake는
+그걸 define이 아니라 그냥 명령줄 조각으로 적음. 그래서 거기서도 읽어내고
+`[from compile flags]`로 표시함. MSVC의 `/D`도 읽음.
+
+**소스에 쓴 `#define`은 이 목록에 없고, 있을 수도 없음.** CMake는 파일 내용을
+읽지 않음. 컴파일러에 넘길 명령줄만 알 뿐임. 파일에 직접 쓴 매크로나 헤더에서
+딸려온 매크로는 빌드 시스템이 볼 수 있는 층위보다 한 단계 아래에 있음.
 
 **헤더는 컴파일되지 않아 어느 그룹에도 속하지 않음.** 타겟에 언어 그룹이 하나뿐이면
 그걸 보여주되 추론이라고 표시하고, C와 C++가 섞인 타겟이면 **고르지 않음.**
@@ -689,7 +699,7 @@ currently only supported if no other instance of Code is running` 로 거부당�
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 18 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 64 checks |
-| include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 48 checks |
+| include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 56 checks |
 | VS Code 확장 호스트 (1.136, macOS + Windows) | 40 checks |
 
 # 성능
