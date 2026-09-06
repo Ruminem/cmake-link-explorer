@@ -98,7 +98,8 @@ function activate(context) {
     planLinkEdit: (target, library) => cmakeEdit.planLinkEdit(provider.model, target, library),
     compareMaps: compareMapFiles,
     closeMap: closeMap,
-    getSizes: () => provider.sizes
+    getSizes: () => provider.sizes,
+    getStaleFiles: staleFiles
   };
 }
 
@@ -198,7 +199,7 @@ function updateStatus() {
     return;
   }
   const count = provider.visibleTargets().length;
-  const stale = fileApi.staleInputs(provider.model, baselineForModel());
+  const stale = staleFiles().all;
   statusItem.text = (stale.length ? '$(warning) ' : '$(circuit-board) ') + count + ' targets';
   statusItem.tooltip =
     'CMake Link Explorer\n' +
@@ -243,18 +244,46 @@ function baselineForModel() {
     : null;
 }
 
+// CMakeLists open with unsaved changes. CMake reads files, not buffers, so
+// while one of these is dirty the reply cannot describe what is on screen --
+// and no timestamp says so, because nothing has been written yet.
+function dirtyInputDocuments() {
+  const model = provider.model;
+  if (!model) return [];
+  const inputs = new Set((model.cmakeInputs || []).map((f) => f.toLowerCase()));
+  return vscode.workspace.textDocuments.filter((document) =>
+    document.isDirty &&
+    document.uri.scheme === 'file' &&
+    inputs.has(document.uri.fsPath.replace(/\\/g, '/').toLowerCase()));
+}
+
+// Unsaved first: it is the one the user can fix without running anything.
+function staleFiles() {
+  const model = provider.model;
+  if (!model) return { unsaved: [], edited: [], all: [] };
+  const unsaved = dirtyInputDocuments().map((d) => d.uri.fsPath);
+  const seen = new Set(unsaved.map((f) => f.replace(/\\/g, '/').toLowerCase()));
+  const edited = fileApi.staleInputs(model, baselineForModel())
+    .filter((f) => !seen.has(f.toLowerCase()));
+  return { unsaved, edited, all: unsaved.concat(edited) };
+}
+
 async function staleEnoughToStop(subject) {
   if (!provider.model) return false;
-  const stale = fileApi.staleInputs(provider.model, baselineForModel());
-  if (!stale.length) return false;
+  const stale = staleFiles();
+  if (!stale.all.length) return false;
 
-  const shown = stale.slice(0, 3).map((f) => path.basename(f));
+  const shown = stale.all.slice(0, 3).map((f) => path.basename(f));
   const names = shown.join(', ') +
-    (stale.length > shown.length ? ' and ' + (stale.length - shown.length) + ' more' : '');
+    (stale.all.length > shown.length ? ' and ' + (stale.all.length - shown.length) + ' more' : '');
+  const what = stale.unsaved.length
+    ? (stale.edited.length ? ' has unsaved changes and others changed' : ' has unsaved changes')
+    : ' changed';
   const choice = await vscode.window.showWarningMessage(
-    names + ' changed since CMake last configured, so ' + subject +
+    names + what + ' since CMake last configured, so ' + subject +
       ' describes the previous configure.',
     'Run CMake configure', 'Show it anyway');
+  // runConfigure saves the unsaved ones first, so this is the whole fix.
   if (choice === 'Run CMake configure') runConfigure();
   return choice !== 'Show it anyway';
 }
@@ -282,11 +311,14 @@ async function selectBuildDir() {
   // onDidChangeConfiguration triggers the reload.
 }
 
-function runConfigure() {
+async function runConfigure() {
   if (!currentBuildDir) {
     vscode.window.showErrorMessage('Select a CMake build directory first.');
     return;
   }
+  // Configuring while a CMakeLists sits unsaved regenerates from the old text
+  // and looks like the tool got the answer wrong.
+  for (const document of dirtyInputDocuments()) await document.save();
   const terminal = vscode.window.createTerminal('CMake configure');
   terminal.show();
   // Re-running cmake on an existing build tree regenerates using the cached
@@ -844,13 +876,19 @@ async function applyLink(result) {
     return;
   }
 
+  // applyEdit only touches the buffer. CMake reads the file, so leaving it
+  // unsaved means the configure offered on the next line would regenerate from
+  // the text without this edit -- and the very next question would answer "does
+  // not link" about the line just written, which is what it did.
+  await document.save();
+
   const editor = await vscode.window.showTextDocument(document);
   const line = Math.min(plan.position.line + (plan.kind === 'create' ? 1 : 0), document.lineCount - 1);
   editor.selection = new vscode.Selection(new vscode.Position(line, 0), new vscode.Position(line, 0));
   editor.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenter);
 
   vscode.window.showInformationMessage(
-    plan.preview + '  —  re-run CMake for the change to take effect.', 'Run CMake configure')
+    plan.preview + '  —  saved. Re-run CMake for the change to take effect.', 'Run CMake configure')
     .then((choice) => { if (choice) runConfigure(); });
 }
 

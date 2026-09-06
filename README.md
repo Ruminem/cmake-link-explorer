@@ -310,6 +310,12 @@ A timestamp alone would fire on `Ctrl+S` over a buffer nobody changed, so when
 the reply and the files agree the contents are recorded, and a file that is
 newer has to differ from that record to count as an edit.
 
+An open `CMakeLists.txt` with **unsaved** changes counts too, and no timestamp
+says so — CMake reads files, not buffers. **Run CMake configure** saves those
+first, and applying a link edit writes it through to disk, so the configure
+offered next to it regenerates from the line just written rather than from the
+text without it.
+
 ### Transitive reduction
 
 The File API's `dependencies` is the **transitive closure in build order**. It
@@ -707,7 +713,7 @@ tests run with no toolchain installed. Regenerate them with
 | target tree rendering | 16 checks |
 | map parser + map tree + target join + demangler | 64 checks |
 | include → link resolution + CMakeLists editing + compile settings | 40 checks |
-| VS Code extension host (1.136, macOS + Windows) | 35 checks |
+| VS Code extension host (1.136, macOS + Windows) | 39 checks |
 
 # Performance
 

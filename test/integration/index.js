@@ -283,6 +283,61 @@ async function runChecks() {
     assert.ok(plan.file.endsWith(path.join('tests', 'CMakeLists.txt')), plan.file);
   });
 
+  // ------------------------------------------------- the reply as a snapshot
+
+  // CMake reads files, not editor buffers. An unsaved CMakeLists is therefore
+  // out of step with the reply while no timestamp says so, and configuring
+  // against it regenerates the old text. Applying a link edit used to leave the
+  // document exactly like this, so the next question answered "does not link"
+  // about the line it had just written.
+  await check('a clean tree reports nothing stale', () => {
+    const stale = api.getStaleFiles();
+    assert.deepStrictEqual(stale.unsaved, []);
+    assert.deepStrictEqual(stale.edited, [], 'edited: ' + JSON.stringify(stale.edited));
+  });
+
+  const rootLists = path.join(workspace, 'CMakeLists.txt');
+  const listsUri = vscode.Uri.file(rootLists);
+  const listsDoc = await vscode.workspace.openTextDocument(listsUri);
+  const before = fs.readFileSync(rootLists);
+  try {
+    // Shown first: revert acts on the active editor, and without this the
+    // buffer stays dirty and the next save writes the probe text into the
+    // checked-in fixture. It did, once.
+    await vscode.window.showTextDocument(listsDoc);
+    const dirty = new vscode.WorkspaceEdit();
+    dirty.insert(listsUri, new vscode.Position(0, 0), '# unsaved\n');
+    assert.ok(await vscode.workspace.applyEdit(dirty), 'could not dirty the document');
+
+    await check('an unsaved CMakeLists counts as stale', () => {
+      assert.ok(listsDoc.isDirty, 'the document was expected to be dirty');
+      const stale = api.getStaleFiles();
+      assert.deepStrictEqual(stale.unsaved.map((f) => path.basename(f)), ['CMakeLists.txt']);
+      assert.ok(stale.all.length >= 1);
+    });
+  } finally {
+    await vscode.commands.executeCommand('workbench.action.files.revert');
+    // Nothing here may write. If the revert did not take, put the bytes back
+    // rather than leave a modified tree behind for every later run.
+    if (!fs.readFileSync(rootLists).equals(before)) fs.writeFileSync(rootLists, before);
+  }
+
+  await check('reverting the buffer clears the warning', () => {
+    assert.ok(!listsDoc.isDirty, 'the document is still dirty');
+    assert.deepStrictEqual(api.getStaleFiles().unsaved, []);
+  });
+
+  await check('a save that changes nothing is not an edit', () => {
+    // Ctrl+S over an untouched buffer rewrites the same bytes and moves the
+    // mtime; touching it is the same thing on disk without the risk of writing.
+    // Warning about it is a nag, and it is what happened the first time this
+    // was tried on a real project.
+    const now = Date.now() / 1000;
+    fs.utimesSync(rootLists, now, now);
+    const stale = api.getStaleFiles();
+    assert.deepStrictEqual(stale.all, [], 'reported: ' + JSON.stringify(stale.all));
+  });
+
   // The quick fix is the point of the feature: it has to appear on the #include
   // line itself, which means going through VS Code's real code action pipeline.
   const probe = path.join(workspace, 'tests', '_probe_generated.cpp');
