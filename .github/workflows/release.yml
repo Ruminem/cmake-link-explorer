@@ -1,0 +1,154 @@
+name: Release
+
+# Tag a commit to cut a release:
+#   git tag v0.2.0 && git push origin v0.2.0
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  vsix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # A tag that disagrees with package.json still packages, but the VSIX
+      # would install under the old version number. Fail loudly instead.
+      - name: Check the tag against package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p 'require("./package.json").version')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag is $tag but package.json says $pkg" >&2
+            exit 1
+          fi
+
+      # No build step and no dependencies: the tests run straight off a checkout.
+      # The suites that need a configured CMake tree skip themselves.
+      - name: Test
+        run: |
+          python3 test/make-fixture.py
+          node test/run.js
+          node test/tree-test.js
+          node test/map-test.js
+          node test/include-test.js
+
+      - name: Package
+        run: npx --yes @vscode/vsce@latest package --out "cmake-link-explorer-${GITHUB_REF_NAME#v}.vsix"
+
+      # install.cmd is checked out on Linux, so .gitattributes is the only thing
+      # keeping its CRLF line endings. A .cmd with bare LF misparses goto.
+      - name: Build the double-click bundle
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          if ! grep -q $'\r' install.cmd; then
+            echo "install.cmd lost its CRLF line endings" >&2
+            exit 1
+          fi
+          mkdir -p "bundle/cmake-link-explorer-$ver"
+          cp "cmake-link-explorer-$ver.vsix" install.cmd "bundle/cmake-link-explorer-$ver/"
+          cd bundle && zip -r "../cmake-link-explorer-$ver-windows.zip" "cmake-link-explorer-$ver"
+
+      # Written with a quoted heredoc so the backticks stay literal, then the
+      # version is substituted in. --notes-file is prepended to the notes
+      # --generate-notes produces, so the changelog still follows underneath.
+      - name: Write the release notes
+        run: |
+          cat > notes.md <<'EOF'
+          A VS Code extension for the moments a CMake project stops you over linking.
+
+          Docs: [English](https://github.com/REPOSLUG/blob/TAGNAME/README.md) · [한국어](https://github.com/REPOSLUG/blob/TAGNAME/README.ko.md)
+
+          ## Install
+
+          ### Windows, double-click
+
+          Download `cmake-link-explorer-VERSION-windows.zip` below, unzip it, and run
+          `install.cmd`. It locates VS Code itself, so `code` does not have to be on
+          PATH — right after installing VS Code the terminal is usually still holding
+          the PATH it started with.
+
+          ### Anywhere else
+
+          Download `cmake-link-explorer-VERSION.vsix` below, then either use `...` →
+          **Install from VSIX** in the Extensions view, or:
+
+          ```sh
+          code --install-extension cmake-link-explorer-VERSION.vsix
+          ```
+
+          Restart VS Code afterwards. It activates on its own when you open a CMake
+          project or a C/C++ file, and finds the build directory by looking for
+          `CMakeCache.txt`.
+
+          ## What is in it
+
+          | | |
+          |---|---|
+          | **Link for include** | what to link to use a header, applied to the right `CMakeLists.txt` as a Quick Fix |
+          | **Targets** | what links what, and above all who links this, with sizes joined in from a linker map |
+          | **Linker Map** | what eats the size, memory regions, and a diff between two builds |
+          | **Compiled With** | the effective macros and include paths for a file, inherited `PUBLIC` settings included |
+          | **Cycles / Unused** | link cycles between static libraries, and libraries nothing needs |
+          | **Compare Trees** | where two configured build trees diverge, for "builds here, breaks there" |
+
+          It reads CMake's File API rather than parsing `CMakeLists.txt`, so generator
+          expressions, conditional links and helper functions all arrive resolved.
+
+          ## Requirements
+
+          - VS Code 1.75 or newer
+          - CMake 3.14 or newer (File API)
+          - No runtime dependencies. Plain JavaScript with no build step.
+
+          Linker map support covers GNU ld and Apple ld64, both verified against real
+          linker output. LLVM lld and MSVC `link.exe /MAP` are not supported yet;
+          guessing at a format without a real sample means quietly showing wrong
+          numbers. C++ symbol demangling uses `c++filt` when it is there and a
+          built-in demangler when it is not, which is the normal case on Windows.
+
+          <details>
+          <summary><b>한국어 설치 안내</b></summary>
+
+          ### Windows, 더블클릭
+
+          아래 `cmake-link-explorer-VERSION-windows.zip`을 받아 풀고 `install.cmd`를
+          실행함. VS Code를 직접 찾으므로 `code`가 PATH에 없어도 됨 — VS Code를 갓 깔았다면
+          터미널이 아직 옛 PATH를 들고 있는 경우가 흔함.
+
+          ### 그 외 환경
+
+          아래 `cmake-link-explorer-VERSION.vsix`를 받아, 확장 뷰에서 `...` →
+          **VSIX에서 설치**를 누르거나 명령줄로:
+
+          ```sh
+          code --install-extension cmake-link-explorer-VERSION.vsix
+          ```
+
+          설치 뒤 VS Code를 다시 켬. CMake 프로젝트나 C/C++ 파일을 여는 것만으로 켜지고,
+          빌드 디렉토리는 `CMakeCache.txt`를 찾아 자동 탐지함.
+
+          </details>
+          EOF
+          sed -i "s/VERSION/${GITHUB_REF_NAME#v}/g" notes.md
+          sed -i "s|REPOSLUG|$GITHUB_REPOSITORY|g; s|TAGNAME|$GITHUB_REF_NAME|g" notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --generate-notes \
+            "cmake-link-explorer-$ver.vsix" \
+            "cmake-link-explorer-$ver-windows.zip"
