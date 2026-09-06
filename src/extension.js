@@ -177,6 +177,12 @@ async function reload() {
 let discoveredBuildDirs = [];
 
 function resolveBuildDir() {
+  // Cleared first. Both paths below can return without running discovery, and
+  // leaving the previous result behind made the status bar tooltip say "2 build
+  // trees found here; using the one configured most recently" about a directory
+  // that had been named outright in the settings.
+  discoveredBuildDirs = [];
+
   const configured = (config().get('buildDirectory', '') || '').trim();
   if (configured) {
     const resolved = path.isAbsolute(configured)
@@ -937,7 +943,10 @@ async function applyLink(result) {
   // unsaved means the configure offered on the next line would regenerate from
   // the text without this edit -- and the very next question would answer "does
   // not link" about the line just written, which is what it did.
-  await document.save();
+  // save() reports whether it actually wrote. A read-only file comes back false,
+  // and saying "saved" then would be a plain untruth -- followed by a configure
+  // that regenerates without the edit.
+  const saved = await document.save();
 
   const editor = await vscode.window.showTextDocument(document);
   const line = Math.min(plan.position.line + (plan.kind === 'create' ? 1 : 0), document.lineCount - 1);
@@ -950,6 +959,13 @@ async function applyLink(result) {
   const why = plan.insteadOfAppending
     ? '  Added as a separate call because ' + plan.insteadOfAppending + '.'
     : '';
+  if (!saved) {
+    vscode.window.showWarningMessage(
+      plan.preview + '  —  written into the editor but ' + path.basename(plan.file) +
+      ' could not be saved.' + why + '  Save it yourself, then re-run CMake.');
+    return;
+  }
+
   vscode.window.showInformationMessage(
     plan.preview + '  —  saved.' + why + '  Re-run CMake for the change to take effect.',
     'Run CMake configure')

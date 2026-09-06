@@ -295,6 +295,26 @@ async function runChecks() {
   // against it regenerates the old text. Applying a link edit used to leave the
   // document exactly like this, so the next question answered "does not link"
   // about the line it had just written.
+  // Discovery only runs when no build directory is configured. It used to leave
+  // its previous result behind on the other path, so the tooltip claimed a
+  // choice between trees for a directory that had been named in the settings.
+  await check('naming a build directory reports no discovery', async () => {
+    const settings = vscode.workspace.getConfiguration('cmakeLinkExplorer');
+    const before = settings.get('buildDirectory', '');
+    try {
+      await settings.update('buildDirectory', path.join(workspace, 'build'),
+                            vscode.ConfigurationTarget.Workspace);
+      await api.reload();
+      assert.ok(api.getModel(), 'the named build directory did not load');
+      assert.strictEqual(api.getStatusText().indexOf('build trees found'), -1,
+        'status bar reads ' + JSON.stringify(api.getStatusText()));
+    } finally {
+      await settings.update('buildDirectory', before || undefined,
+                            vscode.ConfigurationTarget.Workspace);
+      await api.reload();
+    }
+  });
+
   await check('a clean tree reports nothing stale', () => {
     const stale = api.getStaleFiles();
     assert.deepStrictEqual(stale.unsaved, []);

@@ -684,7 +684,7 @@ tests run with no toolchain installed. Regenerate them with
 | target tree rendering | 18 checks |
 | map parser + map tree + target join + demangler | 64 checks |
 | include → link resolution + CMakeLists editing + compile settings | 56 checks |
-| VS Code extension host (1.136, macOS + Windows) | 40 checks |
+| VS Code extension host (1.136, macOS + Windows) | 41 checks |
 
 # Performance
 

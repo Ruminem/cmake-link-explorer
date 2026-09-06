@@ -647,7 +647,7 @@ currently only supported if no other instance of Code is running` 로 거부당�
 | 타겟 트리 렌더링 | 18 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 64 checks |
 | include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 56 checks |
-| VS Code 확장 호스트 (1.136, macOS + Windows) | 40 checks |
+| VS Code 확장 호스트 (1.136, macOS + Windows) | 41 checks |
 
 # 성능
 
