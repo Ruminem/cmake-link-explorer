@@ -1,0 +1,11 @@
+flowchart LR
+    CML["CMakeLists.txt"] -->|"cmake run"| REPLY["File API codemodel<br/>build/.cmake/api/v1/reply"]
+    SRC["C++ sources"] -->|"compile + link"| MAP["linker map file<br/>-Wl,-Map=out.map"]
+
+    EXT["CMake Link Explorer"]
+    REPLY --> EXT
+    MAP --> EXT
+
+    EXT --> T["Targets<br/>what links what"]
+    EXT --> L["Linker Map<br/>what eats the size"]
+    EXT --> Q["Quick Fix / commands<br/>what to link"]

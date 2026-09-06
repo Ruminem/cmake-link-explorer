@@ -1,0 +1,19 @@
+flowchart TB
+    subgraph raw["CMake가 주는 dependencies — 전이적 폐포 (간선 6개)"]
+        direction LR
+        a1["app"] --> b1["engine"]
+        a1 --> c1["store_reader"]
+        a1 --> d1["math_utils"]
+        b1 --> c1
+        b1 --> d1
+        c1 --> d1
+    end
+
+    subgraph reduced["축약 후 — 사람이 실제로 쓴 구조 (간선 3개)"]
+        direction LR
+        a2["app"] --> b2["engine"]
+        b2 --> c2["store_reader"]
+        c2 --> d2["math_utils"]
+    end
+
+    raw -->|"전이 축약"| reduced

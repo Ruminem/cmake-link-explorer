@@ -1,0 +1,19 @@
+flowchart TB
+    subgraph raw["dependencies as CMake reports it — transitive closure (6 edges)"]
+        direction LR
+        a1["app"] --> b1["engine"]
+        a1 --> c1["store_reader"]
+        a1 --> d1["math_utils"]
+        b1 --> c1
+        b1 --> d1
+        c1 --> d1
+    end
+
+    subgraph reduced["after reduction — the structure somebody wrote (3 edges)"]
+        direction LR
+        a2["app"] --> b2["engine"]
+        b2 --> c2["store_reader"]
+        c2 --> d2["math_utils"]
+    end
+
+    raw -->|"transitive reduction"| reduced

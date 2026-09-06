@@ -1,0 +1,15 @@
+flowchart TB
+    subgraph written["linkLibraries — target_link_libraries 에 쓴 그대로"]
+        direction LR
+        a1["a"] --> b1["b"]
+        b1 --> c1["c"]
+        c1 -->|"순환을 닫는 간선"| a1
+    end
+
+    subgraph deps["dependencies — 빌드 순서라 순환일 수 없음"]
+        direction LR
+        a2["a"] --> b2["b"]
+        b2 --> c2["c"]
+    end
+
+    written -->|"CMake가 c → a 를 빼고 줌"| deps

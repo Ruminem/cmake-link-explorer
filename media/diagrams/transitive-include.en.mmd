@@ -1,0 +1,4 @@
+flowchart LR
+    app["app"] -->|"links"| engine["engine"]
+    engine -->|"links PUBLIC"| log["log_wrapper"]
+    app -.->|"only includes"| log

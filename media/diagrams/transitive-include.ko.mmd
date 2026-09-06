@@ -1,0 +1,4 @@
+flowchart LR
+    app["app"] -->|"링크함"| engine["engine"]
+    engine -->|"PUBLIC 으로 링크함"| log["log_wrapper"]
+    app -.->|"include 만 함"| log

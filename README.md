@@ -19,19 +19,7 @@ A VS Code extension for the moments a CMake project stops you over linking.
 already produced, so generator expressions, conditional links and helper
 functions all arrive resolved.
 
-```mermaid
-flowchart LR
-    CML["CMakeLists.txt"] -->|"cmake run"| REPLY["File API codemodel<br/>build/.cmake/api/v1/reply"]
-    SRC["C++ sources"] -->|"compile + link"| MAP["linker map file<br/>-Wl,-Map=out.map"]
-
-    EXT["CMake Link Explorer"]
-    REPLY --> EXT
-    MAP --> EXT
-
-    EXT --> T["Targets<br/>what links what"]
-    EXT --> L["Linker Map<br/>what eats the size"]
-    EXT --> Q["Quick Fix / commands<br/>what to link"]
-```
+![How the pieces fit together](https://raw.githubusercontent.com/Ruminem/cmake-link-explorer/main/media/diagrams/overview.en.png)
 
 The codemodel carries targets, dependencies, macros, include paths and the
 **`file:line` each of them was written at**. The map file carries what takes how
@@ -167,12 +155,7 @@ the consumer.** Same header: `PRIVATE` from a `.cpp`, `PUBLIC` from a `.h`.
 Calling out `transitive` separately is the whole point. It builds, so nobody
 notices, until somebody else's commit breaks it.
 
-```mermaid
-flowchart LR
-    app["app"] -->|"links"| engine["engine"]
-    engine -->|"links PUBLIC"| log["log_wrapper"]
-    app -.->|"only includes"| log
-```
+![app includes log_wrapper but only links engine](https://raw.githubusercontent.com/Ruminem/cmake-link-explorer/main/media/diagrams/transitive-include.en.png)
 
 `app` does not link `log_wrapper`. It compiles today because `engine` drags it in
 `PUBLIC`. **The day somebody drops that link from `engine`, `app` breaks.** The
@@ -348,27 +331,7 @@ three lines of `target_link_libraries` looks like it links fifty.
 
 So it is reduced to the **minimum set of edges** that preserves reachability.
 
-```mermaid
-flowchart TB
-    subgraph raw["dependencies as CMake reports it — transitive closure (6 edges)"]
-        direction LR
-        a1["app"] --> b1["engine"]
-        a1 --> c1["store_reader"]
-        a1 --> d1["math_utils"]
-        b1 --> c1
-        b1 --> d1
-        c1 --> d1
-    end
-
-    subgraph reduced["after reduction — the structure somebody wrote (3 edges)"]
-        direction LR
-        a2["app"] --> b2["engine"]
-        b2 --> c2["store_reader"]
-        c2 --> d2["math_utils"]
-    end
-
-    raw -->|"transitive reduction"| reduced
-```
+![The dependency closure reduced to the edges somebody wrote](https://raw.githubusercontent.com/Ruminem/cmake-link-explorer/main/media/diagrams/reduction.en.png)
 
 Six edges became three and **every reachable relationship survived.** There is
 still a path from `app` to `math_utils`. Measured on abseil-cpp, 121 targets:
@@ -450,23 +413,7 @@ The catch is that the File API's `dependencies` is a **build order**. An order
 cannot loop, so CMake **drops the edge that closes the cycle**. `c` links `a` and
 `c.dependencies` still comes back empty.
 
-```mermaid
-flowchart TB
-    subgraph written["linkLibraries — the link line as written"]
-        direction LR
-        a1["a"] --> b1["b"]
-        b1 --> c1["c"]
-        c1 -->|"the edge that closes the cycle"| a1
-    end
-
-    subgraph deps["dependencies — a build order, so it cannot loop"]
-        direction LR
-        a2["a"] --> b2["b"]
-        b2 --> c2["c"]
-    end
-
-    written -->|"CMake drops c → a"| deps
-```
+![A cycle in linkLibraries that dependencies cannot show](https://raw.githubusercontent.com/Ruminem/cmake-link-explorer/main/media/diagrams/cycles.en.png)
 
 Look at the top only and there is a cycle; look at the bottom only and it is an
 ordinary chain.

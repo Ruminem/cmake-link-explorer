@@ -2,7 +2,7 @@
   "name": "cmake-link-explorer",
   "displayName": "CMake Link Explorer",
   "description": "Browse CMake target link structure in both directions: what a target links, and what links it.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "Ruminem",
   "repository": {
     "type": "git",

@@ -20,3 +20,8 @@ install.cmd
 *-windows.zip
 .github/**
 .gitattributes
+
+# The readmes reference the diagrams by absolute URL so they draw the same on
+# GitHub, the Marketplace and inside VS Code. Shipping them in the VSIX would
+# only make it bigger; nothing reads them from disk.
+media/diagrams/**

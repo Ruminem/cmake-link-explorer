@@ -1,0 +1,15 @@
+flowchart TB
+    subgraph written["linkLibraries — the link line as written"]
+        direction LR
+        a1["a"] --> b1["b"]
+        b1 --> c1["c"]
+        c1 -->|"the edge that closes the cycle"| a1
+    end
+
+    subgraph deps["dependencies — a build order, so it cannot loop"]
+        direction LR
+        a2["a"] --> b2["b"]
+        b2 --> c2["c"]
+    end
+
+    written -->|"CMake drops c → a"| deps
