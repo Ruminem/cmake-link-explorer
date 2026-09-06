@@ -316,6 +316,9 @@ first, and applying a link edit writes it through to disk, so the configure
 offered next to it regenerates from the line just written rather than from the
 text without it.
 
+The status bar tracks this live: editing, saving or reverting a `CMakeLists.txt`
+moves it without waiting for anything to reload the model.
+
 ### Transitive reduction
 
 The File API's `dependencies` is the **transitive closure in build order**. It
@@ -713,7 +716,7 @@ tests run with no toolchain installed. Regenerate them with
 | target tree rendering | 16 checks |
 | map parser + map tree + target join + demangler | 64 checks |
 | include → link resolution + CMakeLists editing + compile settings | 40 checks |
-| VS Code extension host (1.136, macOS + Windows) | 39 checks |
+| VS Code extension host (1.136, macOS + Windows) | 40 checks |
 
 # Performance
 

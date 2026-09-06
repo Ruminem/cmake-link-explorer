@@ -71,6 +71,20 @@ function activate(context) {
       new LinkIncludeActionProvider(),
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }));
 
+  // The warning is only useful if it appears when the thing it warns about
+  // happens. Computed once per model load it went on showing a file the user
+  // had already put back, and stayed quiet about one they had just edited --
+  // until something else happened to reload the model.
+  const watchDocument = (document) => {
+    if (isCMakeInput(document)) scheduleStatusUpdate();
+  };
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(watchDocument),
+    vscode.workspace.onDidCloseTextDocument(watchDocument),
+    // Fires on the first keystroke, which is when the document turns dirty.
+    vscode.workspace.onDidChangeTextDocument((e) => watchDocument(e.document))
+  );
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('cmakeLinkExplorer.buildDirectory') ||
@@ -99,12 +113,15 @@ function activate(context) {
     compareMaps: compareMapFiles,
     closeMap: closeMap,
     getSizes: () => provider.sizes,
-    getStaleFiles: staleFiles
+    getStaleFiles: staleFiles,
+    getStatusText: () => statusItem.text,
+    refreshStatus: updateStatus
   };
 }
 
 function deactivate() {
   if (replyWatcher) replyWatcher.dispose();
+  if (statusTimer) clearTimeout(statusTimer);
 }
 
 // ---------------------------------------------------------------- loading
@@ -255,6 +272,24 @@ function dirtyInputDocuments() {
     document.isDirty &&
     document.uri.scheme === 'file' &&
     inputs.has(document.uri.fsPath.replace(/\\/g, '/').toLowerCase()));
+}
+
+function isCMakeInput(document) {
+  const model = provider.model;
+  if (!model || !document || document.uri.scheme !== 'file') return false;
+  const file = document.uri.fsPath.replace(/\\/g, '/').toLowerCase();
+  return (model.cmakeInputs || []).some((input) => input.toLowerCase() === file);
+}
+
+// Keystrokes arrive one at a time and the check stats every input, so it is
+// coalesced rather than run per character.
+let statusTimer = null;
+function scheduleStatusUpdate() {
+  if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => {
+    statusTimer = null;
+    updateStatus();
+  }, 300);
 }
 
 // Unsaved first: it is the one the user can fix without running anything.

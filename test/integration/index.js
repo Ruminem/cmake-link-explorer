@@ -19,6 +19,11 @@ const LOG_FILE = process.env.CMAKE_LINK_TEST_LOG || '';
 const captured = [];
 
 const results = [];
+
+// The status bar refresh is debounced so a keystroke does not stat every
+// CMakeLists in the project. Wait past that window before reading it.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 600));
+
 async function check(label, fn) {
   try {
     await fn();
@@ -315,6 +320,15 @@ async function runChecks() {
       assert.deepStrictEqual(stale.unsaved.map((f) => path.basename(f)), ['CMakeLists.txt']);
       assert.ok(stale.all.length >= 1);
     });
+
+    // The status bar used to be worked out once per model load and never
+    // again, so it went on showing a file already put back and stayed quiet
+    // about one just edited. Editing a CMakeLists has to move it on its own.
+    await check('the status bar picks up the edit without a reload', async () => {
+      await settle();
+      assert.ok(api.getStatusText().indexOf('$(warning)') !== -1,
+        'status bar reads ' + JSON.stringify(api.getStatusText()));
+    });
   } finally {
     await vscode.commands.executeCommand('workbench.action.files.revert');
     // Nothing here may write. If the revert did not take, put the bytes back
@@ -322,9 +336,12 @@ async function runChecks() {
     if (!fs.readFileSync(rootLists).equals(before)) fs.writeFileSync(rootLists, before);
   }
 
-  await check('reverting the buffer clears the warning', () => {
+  await check('reverting the buffer clears the warning', async () => {
     assert.ok(!listsDoc.isDirty, 'the document is still dirty');
     assert.deepStrictEqual(api.getStaleFiles().unsaved, []);
+    await settle();
+    assert.strictEqual(api.getStatusText().indexOf('$(warning)'), -1,
+      'status bar still reads ' + JSON.stringify(api.getStatusText()));
   });
 
   await check('a save that changes nothing is not an edit', () => {
@@ -332,10 +349,18 @@ async function runChecks() {
     // mtime; touching it is the same thing on disk without the risk of writing.
     // Warning about it is a nag, and it is what happened the first time this
     // was tried on a real project.
-    const now = Date.now() / 1000;
-    fs.utimesSync(rootLists, now, now);
-    const stale = api.getStaleFiles();
-    assert.deepStrictEqual(stale.all, [], 'reported: ' + JSON.stringify(stale.all));
+    const was = fs.statSync(rootLists);
+    try {
+      const now = Date.now() / 1000;
+      fs.utimesSync(rootLists, now, now);
+      const stale = api.getStaleFiles();
+      assert.deepStrictEqual(stale.all, [], 'reported: ' + JSON.stringify(stale.all));
+    } finally {
+      // Put the timestamp back. Left forward, the fixture is newer than the
+      // reply for good, and the next run of this file starts on a stale tree
+      // with no baseline -- which is exactly how it failed.
+      fs.utimesSync(rootLists, was.atime, was.mtime);
+    }
   });
 
   // The quick fix is the point of the feature: it has to appear on the #include

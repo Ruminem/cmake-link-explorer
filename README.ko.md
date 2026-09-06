@@ -303,6 +303,9 @@ Include?* 는 여전히 "이미 링크돼 있음"이라고 답함. 마지막 con
 저장하고, 링크 편집도 디스크까지 씀. 안 그러면 바로 옆 버튼으로 돌린 configure가
 방금 쓴 줄이 없는 상태로 재생성해버림.
 
+상태 표시줄은 이걸 실시간으로 따라감. `CMakeLists.txt`를 고치거나 저장하거나
+되돌리면 모델이 다시 읽히기를 기다리지 않고 바로 바뀜.
+
 ### 전이 축약 (transitive reduction)
 
 File API의 `dependencies`는 **빌드 순서 기준 전이적 폐포**다. 실행 파일 하나가
@@ -680,7 +683,7 @@ currently only supported if no other instance of Code is running` 로 거부당�
 | 타겟 트리 렌더링 | 16 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 64 checks |
 | include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 40 checks |
-| VS Code 확장 호스트 (1.136, macOS + Windows) | 39 checks |
+| VS Code 확장 호스트 (1.136, macOS + Windows) | 40 checks |
 
 # 성능
 
