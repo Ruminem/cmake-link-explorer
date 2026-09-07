@@ -3,6 +3,7 @@
 const vscode = require('vscode');
 const fileApi = require('./fileApi');
 const { formatBytes } = require('./mapFile');
+const { formatMs } = require('./buildLog');
 
 const ICON_BY_TYPE = {
   EXECUTABLE: 'rocket',
@@ -53,6 +54,9 @@ class TargetTreeProvider {
     // targetId -> {size, dynamic, objects}, from a loaded linker map. Null until
     // a map is opened, and the size column simply does not appear.
     this.sizes = null;
+    // targetId -> {compile, link, total, edges}, from a ninja build log. Same
+    // arrangement as sizes: null until a log is open, and the column is absent.
+    this.times = null;
     // neighbourIds sorts, and the sort comparator and every rendered row ask for
     // the same lists over and over; on a large project that was tens of
     // thousands of sorts to draw one screen.
@@ -68,6 +72,17 @@ class TargetTreeProvider {
 
   sizeOf(targetId) {
     return this.sizes ? this.sizes.get(targetId) : undefined;
+  }
+
+  /** Attaches per-target build times worked out from a ninja log, or null to drop them. */
+  setTimes(times) {
+    this.times = times && times.size ? times : null;
+    this.rootNodes = [];
+    this._onDidChangeTreeData.fire();
+  }
+
+  timeOf(targetId) {
+    return this.times ? this.times.get(targetId) : undefined;
   }
 
   setModel(model) {
@@ -136,6 +151,14 @@ class TargetTreeProvider {
       return kept.sort((a, b) => {
         const size = (t) => (this.sizeOf(t.id) || { size: -1 }).size;
         return size(b) - size(a) || byName.compare(a.name, b.name);
+      });
+    }
+    // Same reasoning as size: without a build log every target is equal and the
+    // order would look arbitrary, so fall through to structure instead.
+    if (this.sortOrder === 'time' && this.times) {
+      return kept.sort((a, b) => {
+        const time = (t) => (this.timeOf(t.id) || { total: -1 }).total;
+        return time(b) - time(a) || byName.compare(a.name, b.name);
       });
     }
     return kept.sort((a, b) => {
@@ -241,6 +264,11 @@ class TargetTreeProvider {
     return row.dynamic ? 'dynamic' : formatBytes(row.size);
   }
 
+  timeLabel(targetId) {
+    const row = this.timeOf(targetId);
+    return row ? formatMs(row.total) : '';
+  }
+
   // Tooltips are markdown built from several lookups, and building one for every
   // row on every redraw is most of the cost of drawing a large list. VS Code
   // asks for them only when a row is actually hovered.
@@ -275,7 +303,7 @@ class TargetTreeProvider {
     if (root) {
       // Type is carried by the icon, leaving the description free for counts.
       item.iconPath = new vscode.ThemeIcon(ICON_BY_TYPE[target.type] || 'symbol-misc');
-      item.description = [this.countsFor(node.id), this.sizeLabel(node.id)]
+      item.description = [this.countsFor(node.id), this.sizeLabel(node.id), this.timeLabel(node.id)]
         .filter(Boolean).join('   ');
     } else {
       const forward = node.direction === 'forward';
@@ -317,6 +345,12 @@ class TargetTreeProvider {
           ' of import stubs are in the image'
         : '- in the image: ' + formatBytes(size.size) +
           ' (' + size.objects.length + ' object' + (size.objects.length === 1 ? '' : 's') + ')');
+    }
+    const time = this.timeOf(target.id);
+    if (time) {
+      lines.push('- build time: ' + formatMs(time.total) +
+                 '  (' + formatMs(time.compile) + ' compiling, ' +
+                 formatMs(time.link) + ' linking)');
     }
     if (target.externalLibraries.length) {
       lines.push('- external libraries: ' + target.externalLibraries.length);

@@ -15,6 +15,8 @@
     "cmake",
     "linker",
     "linker map",
+    "ninja",
+    "build time",
     "c++",
     "embedded"
   ],
@@ -54,6 +56,11 @@
           "id": "cmakeLinkExplorer.map",
           "name": "Linker Map",
           "icon": "media/icon.svg"
+        },
+        {
+          "id": "cmakeLinkExplorer.time",
+          "name": "Build Time",
+          "icon": "media/icon.svg"
         }
       ]
     },
@@ -65,6 +72,10 @@
       {
         "view": "cmakeLinkExplorer.map",
         "contents": "No linker map loaded.\n\nBuild with a map file first, for example `-Wl,-Map=out.map` (GNU ld) or `-Wl,-map,out.map` (Apple ld64).\n[Open map file](command:cmakeLinkExplorer.openMap)\n\nTo see what changed between two builds:\n[Compare two map files](command:cmakeLinkExplorer.diffMaps)"
+      },
+      {
+        "view": "cmakeLinkExplorer.time",
+        "contents": "No build log loaded.\n\nninja writes `.ninja_log` at the top of the build directory, and it opens by itself once you have built there. Only the Ninja generator writes one, so configure with `-G Ninja` if the build tree came from Visual Studio or Makefiles.\n[Open build log](command:cmakeLinkExplorer.openBuildLog)\n\nTo see what got slower between two builds:\n[Compare two build logs](command:cmakeLinkExplorer.diffBuildLogs)"
       }
     ],
     "commands": [
@@ -122,6 +133,24 @@
       {
         "command": "cmakeLinkExplorer.closeMap",
         "title": "Close Map",
+        "category": "CMake Links",
+        "icon": "$(close)"
+      },
+      {
+        "command": "cmakeLinkExplorer.openBuildLog",
+        "title": "Open Build Log",
+        "category": "CMake Links",
+        "icon": "$(watch)"
+      },
+      {
+        "command": "cmakeLinkExplorer.diffBuildLogs",
+        "title": "Compare Two Build Logs",
+        "category": "CMake Links",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "cmakeLinkExplorer.closeBuildLog",
+        "title": "Close Build Log",
         "category": "CMake Links",
         "icon": "$(close)"
       },
@@ -195,6 +224,21 @@
         {
           "command": "cmakeLinkExplorer.closeMap",
           "when": "view == cmakeLinkExplorer.map",
+          "group": "navigation@3"
+        },
+        {
+          "command": "cmakeLinkExplorer.openBuildLog",
+          "when": "view == cmakeLinkExplorer.time",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cmakeLinkExplorer.diffBuildLogs",
+          "when": "view == cmakeLinkExplorer.time",
+          "group": "navigation@2"
+        },
+        {
+          "command": "cmakeLinkExplorer.closeBuildLog",
+          "when": "view == cmakeLinkExplorer.time",
           "group": "navigation@3"
         }
       ],
@@ -272,20 +316,27 @@
           "default": 200,
           "description": "How many of the largest symbols to list from a map file."
         },
+        "cmakeLinkExplorer.slowestEdgeLimit": {
+          "type": "number",
+          "default": 50,
+          "description": "How many of the slowest build steps to list from a build log."
+        },
         "cmakeLinkExplorer.sortTargets": {
           "type": "string",
           "enum": [
             "structure",
             "size",
+            "time",
             "name"
           ],
           "default": "structure",
           "enumDescriptions": [
             "Executables first, then libraries ordered by how many targets depend on them.",
             "Largest contribution to the linked image first. Needs a linker map to be open.",
+            "Longest to build first. Needs a ninja build log to be open.",
             "Plain alphabetical order."
           ],
-          "description": "How the target list is ordered. 'structure' surfaces what the project produces and what everything leans on; 'size' needs an open linker map and finds the heavy targets; 'name' is a flat alphabetical list."
+          "description": "How the target list is ordered. 'structure' surfaces what the project produces and what everything leans on; 'size' needs an open linker map and finds the heavy targets; 'time' needs a ninja build log and finds the slow ones; 'name' is a flat alphabetical list."
         }
       }
     }

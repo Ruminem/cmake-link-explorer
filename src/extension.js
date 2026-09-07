@@ -5,20 +5,28 @@ const path = require('path');
 const fs = require('fs');
 const fileApi = require('./fileApi');
 const mapFile = require('./mapFile');
+const buildLog = require('./buildLog');
 const includeResolver = require('./includeResolver');
 const cmakeEdit = require('./cmakeEdit');
 const { TargetTreeProvider, SHORT_TYPE } = require('./tree');
 const { MapTreeProvider } = require('./mapTree');
+const { BuildTimeTreeProvider } = require('./timeTree');
 
 let provider = null;
 let mapProvider = null;
 let mapView = null;
+let timeProvider = null;
+let timeView = null;
 let treeView = null;
 let output = null;
 let statusItem = null;
 let replyWatcher = null;
 let currentBuildDir = null;
 let currentMapModel = null;
+let currentLogModel = null;
+// The build log opens by itself, so closing it has to stick: without this the
+// next reload would put it straight back and the command would look broken.
+let logDismissed = false;
 
 function config() {
   return vscode.workspace.getConfiguration('cmakeLinkExplorer');
@@ -27,6 +35,7 @@ function config() {
 function activate(context) {
   provider = new TargetTreeProvider();
   mapProvider = new MapTreeProvider();
+  timeProvider = new BuildTimeTreeProvider();
   output = vscode.window.createOutputChannel('CMake Link Explorer');
 
   treeView = vscode.window.createTreeView('cmakeLinkExplorer.targets', {
@@ -39,10 +48,15 @@ function activate(context) {
     showCollapseAll: true
   });
 
+  timeView = vscode.window.createTreeView('cmakeLinkExplorer.time', {
+    treeDataProvider: timeProvider,
+    showCollapseAll: true
+  });
+
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
   statusItem.command = 'cmakeLinkExplorer.search';
 
-  context.subscriptions.push(treeView, mapView, output, statusItem, {
+  context.subscriptions.push(treeView, mapView, timeView, output, statusItem, {
     dispose: () => replyWatcher && replyWatcher.dispose()
   });
 
@@ -59,6 +73,9 @@ function activate(context) {
   register('cmakeLinkExplorer.openMap', openMap);
   register('cmakeLinkExplorer.diffMaps', diffMaps);
   register('cmakeLinkExplorer.closeMap', closeMap);
+  register('cmakeLinkExplorer.openBuildLog', openBuildLog);
+  register('cmakeLinkExplorer.diffBuildLogs', diffBuildLogs);
+  register('cmakeLinkExplorer.closeBuildLog', closeBuildLog);
   register('cmakeLinkExplorer.linkForInclude', linkForInclude);
   register('cmakeLinkExplorer.compileSettings', compileSettings);
   register('cmakeLinkExplorer.projectHealth', projectHealth);
@@ -112,6 +129,11 @@ function activate(context) {
     planLinkEdit: (target, library) => cmakeEdit.planLinkEdit(provider.model, target, library),
     compareMaps: compareMapFiles,
     closeMap: closeMap,
+    getTimeProvider: () => timeProvider,
+    loadBuildLog: loadBuildLog,
+    compareBuildLogs: compareBuildLogs,
+    closeBuildLog: closeBuildLog,
+    getTimes: () => provider.times,
     getSizes: () => provider.sizes,
     getStaleFiles: staleFiles,
     getStatusText: () => statusItem.text,
@@ -135,6 +157,12 @@ async function reload() {
     return;
   }
 
+  if (buildDir !== currentBuildDir) {
+    // A different tree is a different build; whatever the user decided about the
+    // last tree's log does not carry over, and neither does the log itself.
+    logDismissed = false;
+    clearBuildLog();
+  }
   currentBuildDir = buildDir;
 
   // Ask CMake for a codemodel. Harmless if it is already there, and it means the
@@ -163,6 +191,7 @@ async function reload() {
     noteInputBaseline(model);
     provider.setModel(model);
     applySizesToTargets();
+    autoLoadBuildLog(buildDir);
     watchReply(buildDir);
     updateStatus();
   } catch (e) {
@@ -1075,6 +1104,167 @@ function closeMap() {
   applySizesToTargets();
   mapView.title = 'Linker Map';
   mapView.description = undefined;
+}
+
+// ---------------------------------------------------------------- build logs
+
+function loadBuildLog(filePath) {
+  const model = buildLog.parseFile(filePath);
+  currentLogModel = model;
+  timeProvider.showLog(model, null);
+  applyTimesToTargets();
+
+  // Every ninja log is called .ninja_log, so the file name says nothing. The
+  // directory it came out of is what tells two builds apart.
+  timeView.title = path.basename(filePath) === '.ninja_log'
+    ? path.basename(path.dirname(filePath))
+    : path.basename(filePath);
+  timeView.description = buildLog.formatMs(model.totals.wall) + '  ·  ' +
+                         model.totals.edges + ' steps';
+  return model;
+}
+
+// The linker map and the build log describe the same targets from different
+// sides, so an open log also gives every CMake target its share of the time.
+function applyTimesToTargets() {
+  if (!currentLogModel || !provider.model) {
+    provider.setTimes(null);
+    timeProvider.setTargetRows(null);
+    return null;
+  }
+  const times = buildLog.matchTargets(provider.model, currentLogModel);
+  provider.setTimes(times);
+  timeProvider.setTargetRows(targetRowsFor(times));
+  return times;
+}
+
+// The tree provider has no target graph of its own, so the naming happens here.
+function targetRowsFor(times) {
+  if (!times || !provider.model) return null;
+  return [...times.entries()]
+    .map(([id, row]) => {
+      const target = provider.model.targets.get(id);
+      return { id, name: target.name, type: target.type, row };
+    })
+    .sort((a, b) => b.row.total - a.row.total || a.name.localeCompare(b.name));
+}
+
+// Unlike a linker map there is nothing for the user to go and find: ninja keeps
+// the log at the top of the build directory it is already pointed at. If a build
+// happened here, open it.
+function autoLoadBuildLog(buildDir) {
+  if (logDismissed) return null;
+  const file = path.join(buildDir, '.ninja_log');
+  if (!fs.existsSync(file)) {
+    // A Visual Studio or Makefiles tree simply has no log, which is not an
+    // error and not worth a message every reload.
+    clearBuildLog();
+    return null;
+  }
+  try {
+    return loadBuildLog(file);
+  } catch (e) {
+    // Loud enough to find, quiet enough not to interrupt: the target graph is
+    // the main feature and it loaded fine.
+    output.appendLine('Could not read ' + file + ': ' + (e.message || e));
+    clearBuildLog();
+    return null;
+  }
+}
+
+function clearBuildLog() {
+  if (!currentLogModel && !timeProvider.comparison) return;
+  currentLogModel = null;
+  timeProvider.clear();
+  provider.setTimes(null);
+  timeView.title = 'Build Time';
+  timeView.description = undefined;
+}
+
+function compareBuildLogs(beforePath, afterPath) {
+  const before = buildLog.parseFile(beforePath);
+  const after = buildLog.parseFile(afterPath);
+  currentLogModel = null;
+  timeProvider.showDiff(before, after);
+  // A diff describes two builds at once, so a single time per target would be
+  // ambiguous; drop the column until one log is open again.
+  provider.setTimes(null);
+  timeView.title = 'diff';
+  timeView.description = path.basename(path.dirname(beforePath)) + ' → ' +
+                         path.basename(path.dirname(afterPath));
+  return timeProvider.comparison;
+}
+
+// Offers the logs sitting in and beside the build tree, plus a way to pick any
+// other. A log is always named .ninja_log, so the directory is the label.
+async function pickBuildLogFile(placeHolder, exclude) {
+  const roots = [currentBuildDir, currentBuildDir && path.dirname(currentBuildDir)]
+    .filter(Boolean);
+  const seen = new Set();
+  const candidates = [];
+  for (const root of roots) {
+    for (const file of buildLog.findBuildLogs(root)) {
+      if (!seen.has(file)) { seen.add(file); candidates.push(file); }
+    }
+  }
+
+  const items = candidates
+    .filter((file) => file !== exclude)
+    .map((file) => ({
+      label: path.basename(path.dirname(file)),
+      description: path.dirname(file),
+      file
+    }));
+  items.push({ label: '$(folder-opened) Browse...', description: 'pick a .ninja_log anywhere', file: null });
+
+  const picked = await vscode.window.showQuickPick(items, { placeHolder });
+  if (!picked) return null;
+  if (picked.file) return picked.file;
+
+  const chosen = await vscode.window.showOpenDialog({
+    canSelectMany: false,
+    openLabel: 'Open build log',
+    filters: { 'All files': ['*'] }
+  });
+  return chosen && chosen.length ? chosen[0].fsPath : null;
+}
+
+async function openBuildLog() {
+  const file = await pickBuildLogFile('Open a ninja build log');
+  if (!file) return;
+  try {
+    const model = loadBuildLog(file);
+    logDismissed = false;
+    const slowest = model.edges[0];
+    vscode.window.showInformationMessage(
+      'Last build took ' + buildLog.formatMs(model.totals.wall) + ' across ' +
+      model.totals.edges + ' steps' +
+      (slowest ? '; slowest was ' + path.basename(slowest.outputs[0]) + ' at ' +
+                 buildLog.formatMs(slowest.duration) : ''));
+  } catch (e) {
+    vscode.window.showErrorMessage('Could not read ' + path.basename(file) + ': ' + (e.message || e));
+  }
+}
+
+async function diffBuildLogs() {
+  const before = await pickBuildLogFile('Compare from which build log? (the older build)');
+  if (!before) return;
+  const after = await pickBuildLogFile('Compare against which build log? (the newer build)', before);
+  if (!after) return;
+  try {
+    const comparison = compareBuildLogs(before, after);
+    const { delta } = comparison.diff.total;
+    vscode.window.showInformationMessage(
+      'Build work changed by ' + (delta > 0 ? '+' : '') + buildLog.formatMs(delta) +
+      ' across ' + comparison.diff.outputs.length + ' steps');
+  } catch (e) {
+    vscode.window.showErrorMessage('Could not compare those build logs: ' + (e.message || e));
+  }
+}
+
+function closeBuildLog() {
+  logDismissed = true;
+  clearBuildLog();
 }
 
 module.exports = { activate, deactivate };

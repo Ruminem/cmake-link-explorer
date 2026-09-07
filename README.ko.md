@@ -9,6 +9,7 @@ CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 
 | **[Link for include](#link-for-include)** | 이 헤더 쓰려면 **뭘 링크해야 하나** | `#include` 쓰고 막혔을 때 |
 | **[Targets](#targets)** | 무엇이 무엇을 링크하나, 특히 **누가 이걸 링크하나** | 구조 파악, 영향 범위 |
 | **[Linker Map](#linker-map)** | **뭐가 용량을 먹나**, 지난 빌드 대비 뭐가 늘었나 | 바이너리가 커졌을 때 |
+| **[Build Time](#build-time)** | **뭐가 시간을 먹나**, 타겟별·단계별로 | 빌드가 느려졌을 때 |
 | **[Compiled With](#what-is-this-file-compiled-with)** | 이 파일의 **실효 매크로와 include 경로** | `#ifdef`가 안 잡힐 때 |
 | **[Cycles / Unused](#find-cycles-and-unused-targets)** | **순환 링크와 아무도 안 쓰는 라이브러리** | 구조 정리할 때 |
 | **[Compare Trees](#compare-with-another-build-tree)** | 두 빌드 트리가 **어디서 갈라지나** | 여기선 되는데 저기선 깨질 때 |
@@ -21,8 +22,8 @@ CMake 프로젝트에서 링크 때문에 막히는 순간을 없애는 VS Code 
 ![전체 구성](https://raw.githubusercontent.com/Ruminem/cmake-link-explorer/main/media/diagrams/overview.ko.png)
 
 코드모델에는 타겟·의존성·매크로·include 경로와 **각 항목이 쓰여진 `파일:줄`**까지
-들어 있음. 맵 파일에는 무엇이 몇 바이트를 차지하는지가 들어 있음. 두 쪽을 이어 붙이는
-것이 이 익스텐션이 하는 일임.
+들어 있음. 맵 파일에는 무엇이 몇 바이트를 차지하는지가, ninja 빌드 로그에는 무엇이
+몇 밀리초 걸렸는지가 들어 있음. 이들을 이어 붙이는 것이 이 익스텐션이 하는 일임.
 
 # 설치
 
@@ -86,7 +87,8 @@ code --list-extensions | Select-String cmake-link # Windows PowerShell
 아이콘을 누를 필요도 없음.
 
 빌드 디렉토리는 `CMakeCache.txt`를 찾아 자동 탐지함(3단계 깊이까지).
-맵 파일도 빌드 디렉토리에서 `*.map`을 찾아 목록으로 띄움.
+맵 파일도 빌드 디렉토리에서 `*.map`을 찾아 목록으로 띄우고, ninja의 `.ninja_log`는
+같은 자리에서 알아서 읽어들임.
 
 ## 익스텐션 자체를 고칠 때만: F5
 
@@ -556,6 +558,109 @@ DIFF
 
 ---
 
+# Build Time
+
+같은 질문을 반대쪽에서 봄. 맵이 **뭐가 용량을 먹나**에 답한다면, 이쪽은 **뭐가 시간을
+먹나**에 답함.
+
+**알아서 열림.** ninja는 로그를 빌드 디렉토리 안 `.ninja_log`에 두는데, 그건 이
+익스텐션이 이미 가리키고 있는 디렉토리임. 찾아 나설 게 없음. 한 번 빌드하면 뷰가 참.
+
+**Ninja 제너레이터만 이 파일을 씀.** Visual Studio나 Makefiles 트리에는 대응물이
+없고, 없는 걸 지어내지도 않음 — 뷰가 비어 있고 그 이유를 알려줌. 필요하면
+`-G Ninja`로 configure 하면 됨.
+
+```
+BUILD TIME                                        build  ·  390 ms  ·  18 steps
+├── last build            390 ms   ·   11.6 s of work across 18 steps
+├── by target                                                   9 attributed
+│   ├── math_utils        3.2 s   27.1%
+│   │   ├── .../math_utils/libmath_utils.a           3.0 s   25.5%
+│   │   └── .../math_utils.dir/math_utils.cpp.obj    184 ms   1.58%
+│   ├── db_wrap           3.2 s   27.1%
+│   └── log_wrapper       3.1 s   27.0%
+├── slowest steps                                                        18
+├── by kind of work
+│   ├── archiving         8.8 s   75.9%
+│   ├── compiling         2.1 s   18.4%
+│   └── linking           669 ms   5.74%
+└── builds in this log                                     2, newest first
+```
+
+맨 윗줄에 숫자가 둘인 건 서로 다른 질문에 답하기 때문임. **390ms가 실제로 기다린
+시간**이고, 11.6초는 기계가 한 일을 전부 더한 값임. 둘의 차이가 곧 동시에 돈 작업
+수이고, 빌드가 빨라졌다는 건 앞쪽 숫자를 두고 하는 말임.
+
+이 예시 자체가 뷰의 용도이기도 함. 이 빌드는 4분의 3이 컴파일러가 아니라 `ar`임.
+
+## 로그에 실제로 뭐가 들어 있나
+
+끝난 단계마다 탭으로 구분된 다섯 열. 단위는 그 ninja 실행이 시작된 뒤의 밀리초임.
+
+```
+# ninja log v7
+10   194   8104820215628786   libs/.../math_utils.cpp.obj   665c63a0cbc75772
+^     ^    ^                  ^                             ^
+start end  mtime              output                        command hash
+```
+
+이 파일에는 틀리기 쉬운 지점이 셋 있고, 셋 다 문서를 읽어서가 아니라 실제로 빌드해서
+결과를 보고 알아낸 것임.
+
+**한 단계가 출력을 여러 개 가질 수 있음.** DLL과 그 임포트 라이브러리는 링크 한
+번인데, 타이밍이 똑같은 두 줄로 들어 있음.
+
+```
+3167  3325  8104820248661472  libs/render_core/librender_core.dll     8d49...
+3167  3325  8104820248661472  libs/render_core/librender_core.dll.a   8d49...
+```
+
+출력 단위로 더하면 이 링크를 두 번 청구함. 여기서는 전부 출력이 아니라 단계 단위로
+세고, 한 단계가 파일을 여럿 만들었으면 행에 `(+1)`이 붙음.
+
+**ninja는 덧붙이기만 하고 지우지 않음.** 다시 빌드하면 새로 만들어진 출력에 줄이
+하나 더 생김. **출력별 마지막 줄이 현재의 정답임** — 픽스처에서 `engine.cpp.obj`는
+콜드 203ms, 웜 90ms인데, 앞엣것을 보고하면 이제는 그렇게 돌지 않는 컴파일을
+설명하는 셈임.
+
+마지막 *빌드*가 아니라 출력별 마지막 *줄*을 쓰는 게 이 뷰를 쓸모 있게 만듦. 풀빌드
+한 번 뒤에 증분을 아무리 돌려도 **모든 타겟에 시간이 남아 있음.**
+
+**한 파일에 여러 번의 빌드가 들어 있음.** 실행 사이를 나누는 표식이 따로 없음. 단서는
+`end` 열이 0 쪽으로 되돌아간다는 것 하나뿐임. ninja가 각 줄을 그 단계가 끝나는
+시점에 쓰기 때문임.
+
+## 타겟과 이어 붙이기
+
+로그는 `libs/engine/CMakeFiles/engine.dir/engine.cpp.obj`가 90ms 걸렸다는 걸 알고,
+CMake는 그 경로가 타겟 `engine`의 것임을 앎. 좁은 것부터 세 경로: CMake의
+`<target>.dir/` 배치, 타겟 `nameOnDisk`와 정확히 같은 이름의 출력, 그리고 **둘 다
+빗나갔을 때만** 같은 어간. 그래서 리눅스 빌드에서 나온 로그가 윈도우에서 configure한
+트리에도 붙음(저쪽은 `libengine.a`, 이쪽은 `engine.lib`). 링커 맵이 이미 하고 있는
+조인이고, 어간 규칙도 같은 것을 그대로 씀.
+
+오브젝트 파일은 절대 어간으로 매칭하지 않음. 오브젝트는 플랫폼이 달라도 제 이름을
+유지하므로, `app.cpp.obj`를 어간으로 붙이면 컴파일된 디렉토리가 아니라 `app`이라는
+이름의 타겟에 귀속됨.
+
+로그가 열려 있으면 **Targets** 뷰의 모든 타겟에 빌드 시간이 붙고,
+`sortTargets: time`으로 그 순서대로 정렬됨.
+
+## Diff
+
+**Compare Two Build Logs**로 두 빌드를 비교함. 단계별 변화량이 큰 순으로 정렬해서
+보여주고, 안 바뀐 단계는 뺌.
+
+```
+DIFF
+├── total work     11.8 s → 11.6 s   -136 ms
+└── by step
+    ├── .../engine.dir/engine.cpp.obj   -113 ms     203 ms → 90 ms
+    └── .../libs/engine/libengine.a       -11 ms     138 ms → 127 ms
+```
+
+---
+
 # 설정
 
 | 키 | 기본값 | 설명 |
@@ -565,10 +670,11 @@ DIFF
 | `cmakeLinkExplorer.showUtilityTargets` | `false` | UTILITY 타겟 표시 |
 | `cmakeLinkExplorer.showExternalLibraries` | `true` | 외부 라이브러리 표시 |
 | `cmakeLinkExplorer.showTransitiveDependencies` | `false` | 축약하지 않고 전체 폐포 표시 |
-| `cmakeLinkExplorer.sortTargets` | `structure` | `structure` = 실행 파일 먼저, 그다음 의존받는 순 / `size` = 이미지 기여 크기순 (맵 필요) / `name` = 알파벳순 |
+| `cmakeLinkExplorer.sortTargets` | `structure` | `structure` = 실행 파일 먼저, 그다음 의존받는 순 / `size` = 이미지 기여 크기순 (맵 필요) / `time` = 빌드 시간순 (빌드 로그 필요) / `name` = 알파벳순 |
 | `cmakeLinkExplorer.demangleSymbols` | `true` | C++ 심볼 디맹글링 |
 | `cmakeLinkExplorer.demanglerCommand` | `c++filt` | 사용할 디맹글러 |
 | `cmakeLinkExplorer.mapSymbolLimit` | `200` | 표시할 최대 심볼 수 |
+| `cmakeLinkExplorer.slowestEdgeLimit` | `50` | 표시할 최대 빌드 단계 수 |
 
 # 테스트
 
@@ -598,9 +704,12 @@ node test/tree-test.js                            타겟 트리 렌더링
 node test/map-test.js                             맵 파서 + 맵 트리
 node test/map-test.js /path/to/x.map              맵 파일 하나 뜯어보기
 node test/include-test.js                         include -> 링크 해결 + CMakeLists 편집
+node test/time-test.js                            빌드 로그 파서 + 빌드 시간 트리
+node test/time-test.js /path/to/.ninja_log        빌드 로그 하나 뜯어보기
 ```
 
-실제 VS Code 확장 호스트 안에서 (활성화, 명령 등록, 트리, 에디터 점프, 맵 탭):
+실제 VS Code 확장 호스트 안에서 (활성화, 명령 등록, 트리, 에디터 점프, 맵 탭,
+빌드 시간 탭):
 
 **macOS**
 
@@ -646,8 +755,9 @@ currently only supported if no other instance of Code is running` 로 거부당�
 | googletest / abseil-cpp (121 타겟) | 8 checks |
 | 타겟 트리 렌더링 | 18 checks |
 | 맵 파서 + 맵 트리 + 타겟 조인 + 디맹글러 | 64 checks |
+| 빌드 로그 파서 + 빌드 시간 트리 + 타겟 조인 (실제 ninja 출력) | 40 checks |
 | include → 링크 해결 + CMakeLists 편집 + 컴파일 설정 | 56 checks |
-| VS Code 확장 호스트 (1.136, macOS + Windows) | 41 checks |
+| VS Code 확장 호스트 (1.136, macOS + Windows) | 47 checks |
 
 # 성능
 

@@ -9,6 +9,7 @@ A VS Code extension for the moments a CMake project stops you over linking.
 | **[Link for include](#link-for-include)** | **what do I have to link** to use this header | you wrote an `#include` and got stuck |
 | **[Targets](#targets)** | what links what, and above all **who links this** | reading the structure, judging blast radius |
 | **[Linker Map](#linker-map)** | **what is eating the size**, and what grew since the last build | the binary got bigger |
+| **[Build Time](#build-time)** | **what is eating the time**, per target and per step | the build got slower |
 | **[Compiled With](#what-is-this-file-compiled-with)** | the **effective macros and include paths** for this file | an `#ifdef` is not firing |
 | **[Cycles / Unused](#find-cycles-and-unused-targets)** | **link cycles and libraries nobody uses** | tidying the structure |
 | **[Compare Trees](#compare-with-another-build-tree)** | **where two build trees diverge** | it builds here and breaks there |
@@ -23,7 +24,8 @@ functions all arrive resolved.
 
 The codemodel carries targets, dependencies, macros, include paths and the
 **`file:line` each of them was written at**. The map file carries what takes how
-many bytes. Joining the two is what this extension does.
+many bytes. ninja's build log carries what took how many milliseconds. Joining
+them is what this extension does.
 
 # Install
 
@@ -90,7 +92,8 @@ From then on it wakes up when you open a CMake project or a C/C++ file. There is
 no icon to press first.
 
 The build directory is found by looking for `CMakeCache.txt` (three levels deep).
-Map files are listed from whatever `*.map` sits in that build directory.
+Map files are listed from whatever `*.map` sits in that build directory, and
+ninja's `.ninja_log` is picked up from it automatically.
 
 ## Only when working on the extension itself: F5
 
@@ -588,6 +591,115 @@ DIFF
 
 ---
 
+# Build Time
+
+The same question from the other side. The map says what is eating the size;
+this says **what is eating the time**.
+
+**It opens by itself.** ninja keeps its log at `.ninja_log` in the build
+directory, which is the directory this extension is already pointed at, so
+there is nothing to go and find. Build once and the view is populated.
+
+**Only the Ninja generator writes one.** A Visual Studio or Makefiles tree has
+no equivalent, and nothing here invents one — the view stays empty and says so.
+Configure with `-G Ninja` if you want it.
+
+```
+BUILD TIME                                        build  ·  390 ms  ·  18 steps
+├── last build            390 ms   ·   11.6 s of work across 18 steps
+├── by target                                                   9 attributed
+│   ├── math_utils        3.2 s   27.1%
+│   │   ├── .../math_utils/libmath_utils.a           3.0 s   25.5%
+│   │   └── .../math_utils.dir/math_utils.cpp.obj    184 ms   1.58%
+│   ├── db_wrap           3.2 s   27.1%
+│   └── log_wrapper       3.1 s   27.0%
+├── slowest steps                                                        18
+├── by kind of work
+│   ├── archiving         8.8 s   75.9%
+│   ├── compiling         2.1 s   18.4%
+│   └── linking           669 ms   5.74%
+└── builds in this log                                     2, newest first
+```
+
+That first row is two numbers because they answer different questions. **390 ms
+is what you waited for**; 11.6 s is what the machine did, added up. They differ
+by however many jobs ran at once, and only the first one is the build getting
+faster.
+
+The example is also the sort of thing the view is for: three quarters of this
+build is `ar`, not the compiler.
+
+## What the log actually says
+
+Five tab-separated columns per completed step, in milliseconds since that ninja
+invocation started:
+
+```
+# ninja log v7
+10   194   8104820215628786   libs/.../math_utils.cpp.obj   665c63a0cbc75772
+^     ^    ^                  ^                             ^
+start end  mtime              output                        command hash
+```
+
+Three things about that file are easy to get wrong, and all three were found by
+building a project and reading the result rather than by reading the docs.
+
+**One step can have several outputs.** A DLL and its import library are one
+link, written as two lines with identical timings:
+
+```
+3167  3325  8104820248661472  libs/render_core/librender_core.dll     8d49...
+3167  3325  8104820248661472  libs/render_core/librender_core.dll.a   8d49...
+```
+
+Adding up per output bills that link twice. Everything here counts steps, not
+outputs, and the row says `(+1)` when a step produced more than one file.
+
+**ninja appends and never clears.** Build again and the rebuilt outputs get a
+second line. **The last line for an output is the current answer** — in the
+fixture `engine.cpp.obj` is 203 ms cold and 90 ms warm, and reporting the first
+would describe a compile that no longer happens that way.
+
+Taking the last line *per output* rather than the last build is what makes the
+view useful: after one full build and any number of small incremental ones,
+**every target still has a time**.
+
+**One file holds several builds.** There is no marker between runs. The only
+signal is that the `end` column drops back towards zero, because ninja writes
+each line as its step finishes.
+
+## Joining with targets
+
+The log knows `libs/engine/CMakeFiles/engine.dir/engine.cpp.obj` took 90 ms.
+CMake knows that path belongs to target `engine`. Three routes, most specific
+first: CMake's `<target>.dir/` layout, an output named exactly like the
+target's `nameOnDisk`, and — only once both have missed — the same stem, so a
+log from a Linux build still joins to a tree configured on Windows
+(`libengine.a` there, `engine.lib` here). This is the join the linker map
+already does, and it reuses the same stem rule.
+
+Object files are never matched by stem: they keep their own names across
+platforms, so `app.cpp.obj` would be credited to a target called `app` instead
+of to the directory it was compiled in.
+
+Once a log is open, every target in the **Targets** view carries its build time,
+and `sortTargets: time` orders by it.
+
+## Diff
+
+**Compare Two Build Logs** puts two builds side by side, sorted by how much each
+step moved. Unchanged steps are left out.
+
+```
+DIFF
+├── total work     11.8 s → 11.6 s   -136 ms
+└── by step
+    ├── .../engine.dir/engine.cpp.obj   -113 ms     203 ms → 90 ms
+    └── .../libs/engine/libengine.a       -11 ms     138 ms → 127 ms
+```
+
+---
+
 # Settings
 
 | Key | Default | Description |
@@ -597,10 +709,11 @@ DIFF
 | `cmakeLinkExplorer.showUtilityTargets` | `false` | Show UTILITY targets |
 | `cmakeLinkExplorer.showExternalLibraries` | `true` | Show external libraries |
 | `cmakeLinkExplorer.showTransitiveDependencies` | `false` | Show the full closure instead of reducing it |
-| `cmakeLinkExplorer.sortTargets` | `structure` | `structure` = executables first, then by how many depend on it / `size` = by contribution to the image (needs a map) / `name` = alphabetical |
+| `cmakeLinkExplorer.sortTargets` | `structure` | `structure` = executables first, then by how many depend on it / `size` = by contribution to the image (needs a map) / `time` = by how long it takes to build (needs a build log) / `name` = alphabetical |
 | `cmakeLinkExplorer.demangleSymbols` | `true` | Demangle C++ symbols |
 | `cmakeLinkExplorer.demanglerCommand` | `c++filt` | Which demangler to use |
 | `cmakeLinkExplorer.mapSymbolLimit` | `200` | Most symbols to show |
+| `cmakeLinkExplorer.slowestEdgeLimit` | `50` | Most build steps to list |
 
 # Tests
 
@@ -631,10 +744,12 @@ node test/tree-test.js                            target tree rendering
 node test/map-test.js                             map parser + map tree
 node test/map-test.js /path/to/x.map              take one map file apart
 node test/include-test.js                         include -> link resolution + CMakeLists editing
+node test/time-test.js                            build log parser + build time tree
+node test/time-test.js /path/to/.ninja_log        take one build log apart
 ```
 
 Inside a real VS Code extension host (activation, command registration, the tree,
-editor jumps, the map view):
+editor jumps, the map view, the build time view):
 
 **macOS**
 
@@ -683,8 +798,9 @@ tests run with no toolchain installed. Regenerate them with
 | googletest / abseil-cpp (121 targets) | 8 checks |
 | target tree rendering | 18 checks |
 | map parser + map tree + target join + demangler | 64 checks |
+| build log parser + build time tree + target join (real ninja output) | 40 checks |
 | include → link resolution + CMakeLists editing + compile settings | 56 checks |
-| VS Code extension host (1.136, macOS + Windows) | 41 checks |
+| VS Code extension host (1.136, macOS + Windows) | 47 checks |
 
 # Performance
 

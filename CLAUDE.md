@@ -16,23 +16,33 @@ CMake 프로젝트의 링크 관계를 보여주는 VS Code 익스텐션. 순수
 | `src/mapFile.js` | 링커 맵 파서 (GNU ld / ld64) |
 | `src/demangle.js` | 내장 C++ 디맹글러 (Itanium 부분집합, 모르면 거절) |
 | `src/mapTree.js` | Linker Map 트리뷰 + diff |
+| `src/buildLog.js` | ninja 빌드 로그 파서 (`.ninja_log`) |
+| `src/timeTree.js` | Build Time 트리뷰 + diff |
 | `src/includeResolver.js` | `#include` → 링크할 타겟 판정 |
 | `src/cmakeEdit.js` | CMakeLists.txt 최소 편집 (append만) |
 
 ## 테스트
 
-`node`만 있으면 된다. `test/maps/`에 진짜 링커가 만든 맵이 커밋돼 있어서
-툴체인 없이도 파서 테스트가 돈다.
+`node`만 있으면 된다. `test/maps/`에 진짜 링커가 만든 맵이, `test/ninja/`에 진짜
+ninja가 만든 빌드 로그가 커밋돼 있어서 툴체인 없이도 파서 테스트가 돈다.
 
 ```
 node test/run.js            # File API 픽스처
 node test/tree-test.js      # 타겟 트리
 node test/map-test.js       # 맵 파서 + 맵 트리
 node test/include-test.js   # include 해결 + CMakeLists 편집
+node test/time-test.js      # ninja 빌드 로그 파서 + 타겟 조인
 ```
 
+`map-test.js`와 `time-test.js`는 파일 경로를 인자로 주면 그것 하나만 파싱해서
+요약을 찍는다 (`node test/time-test.js /path/to/.ninja_log`).
+
 `test/bootstrap.sh`(생성물 만들기)와 실제 CMake 빌드 검증은 `cmake`가 필요하다.
-없으면 위 4개만 돌려도 대부분 검증된다.
+없으면 위 5개만 돌려도 대부분 검증된다.
+
+픽스처를 다시 만들려면 `test/mapgen/generate.sh`(맵)와 `test/ninja/generate.sh`
+(빌드 로그). **다시 만들면 테스트의 숫자가 전부 바뀐다** — 새 출력에 맞춰
+단언을 고쳐야 한다.
 
 확장 호스트 통합 테스트는 플랫폼마다 VS Code 실행 경로가 다르다. README의
 "테스트" 절 참고.
@@ -72,6 +82,12 @@ configure한 것(`foo.lib`, `foo.dll`)일 수 있다.
 - `mapFile.detectFormat`은 GNU ld와 Apple ld64만 인식한다. 제품 빌드가 리눅스
   GNU ld이므로 **현재 용도에서는 문제가 되지 않는다.** MSVC로 빌드할 일이
   생기면 그때 다시 본다.
+- **`.ninja_log`는 Ninja 제너레이터에서만 나온다.** 즉 윈도우에서 Visual Studio
+  제너레이터로 configure한 트리에는 **Build Time 뷰가 비어 있다.** 이건 OS 의존성이
+  아니라 제너레이터 의존성이고, 고칠 수 있는 종류가 아니다(VS 트리에는 대응하는
+  기록이 아예 없다). 윈도우에서 이 뷰를 쓰려면 `-G Ninja`로 별도 트리를 하나
+  뽑아야 한다. 리눅스 제품 빌드가 Ninja라면 그쪽 `.ninja_log`를 가져와서
+  **Open Build Log로 열면 된다** — 조인은 크로스 OS로 동작한다.
 
 정정 이력: `fileApi.isLibraryFragment`가 MSVC `.lib`을 놓친다고 적었던 적이 있으나
 **틀렸다.** 대시로 시작하지 않는 조각은 전부 라이브러리로 받으므로 `foo.lib`,

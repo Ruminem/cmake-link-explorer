@@ -1,0 +1,24 @@
+# ninja log v7
+10	194	8104820215628786	libs/math_utils/CMakeFiles/math_utils.dir/math_utils.cpp.obj	665c63a0cbc75772
+27	230	8104820215798481	libs/engine/CMakeFiles/engine.dir/engine.cpp.obj	e4cf1be73c1bc7a5
+41	233	8104820215933959	app/CMakeFiles/sample_app.dir/sample_app.cpp.obj	14a814df60627e9d
+34	238	8104820215863901	libs/render_core/CMakeFiles/render_core.dir/render_core.cpp.obj	d9892df7cc197f88
+48	245	8104820215999161	tests/CMakeFiles/engine_test.dir/engine_test.cpp.obj	1504e48505d37b06
+56	251	8104820216090048	tests/CMakeFiles/store_test.dir/store_test.cpp.obj	b663d08d5e3978cd
+20	252	8104820215722751	libs/log_wrapper/CMakeFiles/log_wrapper.dir/log_wrapper.cpp.obj	f533aecc8705fb05
+15	400	8104820215673897	libs/store_reader/CMakeFiles/store_reader.dir/store_reader.cpp.obj	5ca8e037f42fdb4f
+5	467	8104820215568821	libs/db_wrap/CMakeFiles/db_wrap.dir/db_wrap.cpp.obj	61fb4ea8c4b56930
+252	3160	8104820218048633	libs/log_wrapper/liblog_wrapper.a	201161c49e7f436b
+467	3160	8104820220190105	libs/db_wrap/libdb_wrap.a	bd294cff20674249
+195	3167	8104820217473149	libs/math_utils/libmath_utils.a	441e283e1ce1859b
+3160	3297	8104820247122566	libs/store_reader/libstore_reader.a	382e45283979cd10
+3167	3325	8104820248661472	libs/render_core/librender_core.dll	8d49140c367e33aa
+3167	3325	8104820248661472	libs/render_core/librender_core.dll.a	8d49140c367e33aa
+3297	3435	8104820248495017	libs/engine/libengine.a	6656a03e4d08dec7
+3303	3479	8104820248560100	tests/store_test.exe	6ba2a519dd14bc29
+3442	3611	8104820249948597	tests/engine_test.exe	98a67b030201eed3
+3435	3613	8104820249876882	app/sample_app.exe	974ec25a773bf6e9
+9	99	8104820457915768	libs/engine/CMakeFiles/engine.dir/engine.cpp.obj	e4cf1be73c1bc7a5
+99	226	8104820458821005	libs/engine/libengine.a	6656a03e4d08dec7
+232	394	8104820460156089	tests/engine_test.exe	98a67b030201eed3
+226	399	8104820460096095	app/sample_app.exe	974ec25a773bf6e9
