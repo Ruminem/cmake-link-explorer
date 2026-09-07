@@ -1,5 +1,16 @@
 # NEXT
 
+**막힌 것 — 0.2.2 게시가 PAT 때문에 멈춰 있다.** 커밋까지는 다 됐고
+`vsce publish`가 `TF400813: The user ... is not authorized`로 거부했다. 만료일을
+2027-09-05로 적어 뒀지만 토큰이 죽어 있다. **재발급 후 `vsce login Ruminem`을
+직접 돌려야 한다** (PAT 입력이 대화형이라 다른 방법이 없다). 그 다음
+`npx.cmd @vscode/vsce publish` 한 줄이면 끝나고, 성공하면 `v0.2.2` 태그를 붙인다.
+커밋 `d3a13f1`(Release 0.2.2)까지는 origin/main에 올라가 있다.
+
+**0.2.2에 들어간 것** — 0.2.1 이후의 인터페이스 수정 둘. 상태 표시줄이 돌지도 않은
+빌드 트리 탐색 결과를 말하던 것, 그리고 저장에 실패한 링크 편집이 "저장됨"이라고
+답하던 것.
+
 **여기까지 됨** — 0.2.1을 **VS Code 마켓플레이스에 올렸다.** 그리고 실제로 써 보면서
 조용히 틀리던 것들을 여섯 개 잡았다.
 
@@ -13,6 +24,22 @@ Azure DevOps 조직 `ruminem` + PAT(Marketplace/Manage, All accessible organizat
 2027-09-05 만료)로 로그인해 뒀다. **토큰이 만료되면 재발급 후 `vsce login Ruminem`.**
 조직을 만들려면 Azure 구독 연결이 필수여서 종량제 구독을 붙였다 — 리소스를 만들지
 않는 한 청구는 0원이다.
+
+**새 기기에서 클론하면 테스트가 크래시한다.** `test/fixture/`와
+`test/sample-project/build/`는 `.gitignore` 대상이라 따라오지 않고, 없으면
+`node test/run.js`와 `tree-test.js`가 죽는다. 익스텐션도 같은 이유로 빌드 트리를
+못 찾아 "No CMake targets loaded yet."만 띄운다. `sh test/bootstrap.sh`, 또는
+윈도우에서 `python test/make-fixture.py` + `cmake -S test/sample-project -B
+test/sample-project/build`.
+
+**윈도우에서 configure하면 생성기가 Visual Studio다.** 그러면 CMake가 모든 타겟에
+`ZERO_CHECK`를 의존으로 박는다. `test/run.js`의 링크 그래프 검사는 이제 트리뷰와
+같은 기준으로 UTILITY를 걸러내고 비교한다(`linkNamesOf`). 생성기가 만든 타겟을
+기대값에 넣어 맞추지 않는다 — 그러면 리눅스에서 깨진다.
+
+**VSIX에 `media/screenshots/README.md`가 들어간다.** 찍을 것을 적어둔 개발 메모인데
+`.vscodeignore`가 `media/diagrams/**`만 빼고 있어서 사용자에게 배포된다. 스크린샷을
+넣을 때 같이 정리한다.
 
 **이번에 잡은 것 — 전부 "에러 없이 틀린 답"이었다**
 
