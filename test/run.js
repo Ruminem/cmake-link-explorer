@@ -36,6 +36,14 @@ const byName = new Map(Array.from(model.targets.values()).map((t) => [t.name, t]
 const nameOf = (id) => model.targets.get(id).name;
 const namesOf = (ids) => ids.map(nameOf).sort();
 
+// Utility targets are not part of the link graph, and which ones exist is up to
+// the generator: the Visual Studio generators hang ZERO_CHECK off every target,
+// Makefile and Ninja write no such thing. The tree view filters them out before
+// showing a link, so the link-graph checks below compare the same set rather
+// than the generator's bookkeeping.
+const linkNamesOf = (ids) =>
+  ids.filter((id) => fileApi.isLinkable(model.targets.get(id))).map(nameOf).sort();
+
 console.log('build directory: ' + buildDir);
 console.log('configuration:   ' + (model.configuration || '(default)'));
 console.log('targets:         ' + model.targets.size);
@@ -167,26 +175,26 @@ if (isSampleProject) {
   });
 
   check('direct dependencies match target_link_libraries', () => {
-    assert.deepStrictEqual(namesOf(byName.get('sample_app').directDependencyIds),
+    assert.deepStrictEqual(linkNamesOf(byName.get('sample_app').directDependencyIds),
                            ['engine', 'log_wrapper', 'render_core']);
-    assert.deepStrictEqual(namesOf(byName.get('engine').directDependencyIds),
+    assert.deepStrictEqual(linkNamesOf(byName.get('engine').directDependencyIds),
                            ['math_utils', 'store_reader']);
   });
 
   check('CMake still reports the full transitive closure', () => {
-    assert.deepStrictEqual(namesOf(byName.get('sample_app').dependencyIds),
+    assert.deepStrictEqual(linkNamesOf(byName.get('sample_app').dependencyIds),
                            ['db_wrap', 'engine', 'log_wrapper', 'math_utils', 'render_core', 'store_reader']);
   });
 
   check('reverse dependencies name only the direct consumers', () => {
-    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('math_utils').id)),
+    assert.deepStrictEqual(linkNamesOf(model.linkedBy.get(byName.get('math_utils').id)),
                            ['engine', 'render_core']);
-    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('db_wrap').id)),
+    assert.deepStrictEqual(linkNamesOf(model.linkedBy.get(byName.get('db_wrap').id)),
                            ['store_reader']);
   });
 
   check('reverse dependencies span app and test targets', () => {
-    assert.deepStrictEqual(namesOf(model.linkedBy.get(byName.get('store_reader').id)),
+    assert.deepStrictEqual(linkNamesOf(model.linkedBy.get(byName.get('store_reader').id)),
                            ['engine', 'store_test']);
   });
 
