@@ -16,3 +16,8 @@ test/mapgen/*.dSYM/
 test/mapgen/big_O0
 test/mapgen/big_O2
 test/mapgen/*.map
+
+# Editor state. The repo root one points at whichever tree is being configured
+# by hand, and test/sample-project/.vscode is left behind by the extension-host
+# test that writes a workspace setting.
+.vscode/
