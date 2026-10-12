@@ -154,7 +154,7 @@ sh media/diagrams/render.sh      # .mmd 전부를 .png로 다시 그린다
 
 - 커밋 메시지는 **무엇을 왜 바꿨는지 서술하는 영어 문장**. 접두사(`feat:`) 안 쓴다.
 - 커밋에 `Co-Authored-By` 트레일러를 붙이지 않는다.
-- 세션을 끝낼 때 `NEXT.md`를 갱신한다 (여기까지 됨 / 다음 할 것 / 막힌 것).
+- 세션을 끝낼 때 진행 메모(notes 저장소 `progress/cmake-link-explorer/NEXT.md`)를 갱신한다 (여기까지 됨 / 다음 할 것 / 막힌 것).
   기기를 옮겨가며 작업하므로 이 파일이 유일한 인수인계 수단이다.
 - **릴리스 노트는 전역 규칙(`~/.claude/CLAUDE.md`)을 따른다** — 태그마다 변경 내역을 적는다.
   **여기는 아직 그렇게 되어 있지 않다.** `release.yml`이 `--generate-notes`에 기대는데
